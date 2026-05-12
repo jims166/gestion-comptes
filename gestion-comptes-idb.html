@@ -1,0 +1,1466 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<title>Gestion des comptes</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<style>
+  * { box-sizing: border-box; }
+  body { font-family: -apple-system, Segoe UI, Roboto, sans-serif; margin: 0; background: #f5f6f8; color: #222; }
+  header { background: #1f3a5f; color: #fff; padding: 14px 22px; display:flex; justify-content:space-between; align-items:center; }
+  header h1 { margin:0; font-size: 18px; font-weight: 600; }
+  header .actions button { margin-left: 8px; }
+  main { display: grid; grid-template-columns: 260px 1fr; min-height: calc(100vh - 52px); }
+  aside { background: #fff; border-right: 1px solid #e3e6eb; padding: 14px; }
+  aside h2 { font-size: 12px; text-transform: uppercase; color: #6b7280; margin: 6px 0 10px; letter-spacing: .5px; }
+  .acc-item { padding: 10px 12px; border-radius: 8px; cursor: pointer; margin-bottom: 6px; border: 1px solid transparent; }
+  .acc-item:hover { background: #f1f3f6; }
+  .acc-item.active { background: #eaf1fb; border-color: #c7dbf5; }
+  .acc-name { font-weight: 600; font-size: 14px; }
+  .acc-type { font-size: 11px; color: #6b7280; }
+  .acc-bal { font-size: 13px; margin-top: 4px; font-variant-numeric: tabular-nums; }
+  .pos { color: #138a36; }
+  .neg { color: #c0392b; }
+  section.content { padding: 18px 22px; overflow:auto; }
+  .summary { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 16px; }
+  .card { background:#fff; border:1px solid #e3e6eb; border-radius:10px; padding:12px 14px; }
+  .card .lbl { font-size:11px; color:#6b7280; text-transform: uppercase; letter-spacing:.5px; }
+  .card .val { font-size:20px; font-weight:600; margin-top:4px; font-variant-numeric: tabular-nums; }
+  .toolbar { display:flex; gap:8px; align-items:center; margin-bottom:10px; flex-wrap:wrap; }
+  button { background:#1f3a5f; color:#fff; border:0; padding:8px 14px; border-radius:6px; cursor:pointer; font-size:13px; }
+  button.secondary { background:#fff; color:#1f3a5f; border:1px solid #c7d2e0; }
+  button.danger { background:#c0392b; }
+  button:hover { opacity:.9; }
+  input, select { padding:7px 9px; border:1px solid #c7d2e0; border-radius:6px; font-size:13px; background:#fff; }
+  table { width:100%; border-collapse: collapse; background:#fff; border-radius:10px; overflow:hidden; border:1px solid #e3e6eb; }
+  th, td { padding: 9px 10px; text-align:left; border-bottom: 1px solid #eef0f3; font-size:13px; }
+  th { background:#fafbfc; font-weight:600; font-size:12px; color:#4b5563; text-transform: uppercase; letter-spacing:.4px; }
+  td.amount { text-align:right; font-variant-numeric: tabular-nums; }
+  tr.reconciled { color:#9aa3ad; }
+  tr.reconciled td.amount { color:#9aa3ad; }
+  .charts { display:grid; grid-template-columns: 2fr 1fr; gap:14px; margin-top:16px; }
+  .chart-box { background:#fff; border:1px solid #e3e6eb; border-radius:10px; padding:12px; }
+  .chart-box h3 { font-size:13px; margin:0 0 8px; color:#374151; }
+  dialog { border:0; border-radius:12px; padding:0; box-shadow:0 20px 60px rgba(0,0,0,.25); width: 420px; }
+  dialog::backdrop { background: rgba(0,0,0,.4); }
+  .dlg-h { padding: 14px 18px; border-bottom:1px solid #eef0f3; font-weight:600; }
+  .dlg-b { padding: 16px 18px; display:grid; gap:10px; }
+  .dlg-b label { font-size:12px; color:#4b5563; display:flex; flex-direction:column; gap:4px; }
+  .dlg-f { padding: 12px 18px; border-top:1px solid #eef0f3; display:flex; justify-content:flex-end; gap:8px; }
+  .row { display:flex; gap:8px; }
+  .row > * { flex:1; }
+  .empty { text-align:center; color:#9aa3ad; padding:30px; }
+  .pill { display:inline-block; padding:2px 8px; border-radius:10px; background:#eef2f7; font-size:11px; color:#4b5563; }
+  .filterbar { display:flex; gap:8px; align-items:center; margin: 8px 0 12px; flex-wrap:wrap; }
+  .dlgrow { display:flex; align-items:center; gap:12px; padding:12px 14px; border-top:1px solid #eef0f3; cursor:pointer; background:#fff; }
+  .dlgrow:first-of-type { border-top:0; }
+  .dlgrow:hover { background:#f8fafc; }
+  .dlgrow.danger:hover { background:#fdecea; }
+  .dlgrow > div:first-child { flex:1; }
+  .dlgrow-t { font-size:14px; font-weight:500; color:#0f1115; }
+  .dlgrow-s { font-size:12px; color:#6b7280; margin-top:2px; }
+  .dlgrow-c { color:#9aa3ad; font-size:18px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Gestion des comptes <span style="font-size:11px;font-weight:normal;color:#c7dbf5;margin-left:6px;vertical-align:middle;">v1.0</span></h1>
+  <div class="actions">
+    <span id="syncStatus" style="font-size:18px;cursor:default;margin-right:8px;vertical-align:middle;" title="En attente">⏳</span>
+    <button class="secondary" onclick="openSecurityDlg()">🔒 Sécurité</button>
+    <button class="secondary" onclick="openDataDlg()">📊 Données</button>
+    <input type="file" id="importFile" accept=".json" style="display:none" onchange="importData(event)">
+    <input type="file" id="importCSVFile" accept=".csv,.txt" style="display:none" onchange="loadCSV(event)">
+  </div>
+</header>
+
+<!-- Lock overlay (plein écran, bloque tant que non déverrouillé) -->
+<div id="lockOverlay" style="display:none;position:fixed;inset:0;background:#1f3a5f;color:#fff;z-index:99999;align-items:center;justify-content:center;">
+  <div style="background:#fff;color:#222;border-radius:14px;padding:28px 32px;width:380px;max-width:90vw;box-shadow:0 30px 80px rgba(0,0,0,.4);">
+    <h2 id="lockTitle" style="margin:0 0 6px;font-size:20px;">🔒 Application verrouillée</h2>
+    <p id="lockSubtitle" style="margin:0 0 16px;color:#6b7280;font-size:13px;">Saisis ton mot de passe pour accéder à tes comptes.</p>
+    <input id="lockPwd" type="password" placeholder="Mot de passe" style="width:100%;padding:10px;border:1px solid #c7d2e0;border-radius:6px;font-size:14px;">
+    <input id="lockPwd2" type="password" placeholder="Confirme le mot de passe" style="width:100%;padding:10px;border:1px solid #c7d2e0;border-radius:6px;font-size:14px;margin-top:8px;display:none;">
+    <div id="lockError" style="color:#c0392b;font-size:12px;margin-top:8px;min-height:16px;"></div>
+    <button id="lockBtn" style="width:100%;margin-top:10px;padding:11px;font-size:14px;">Déverrouiller</button>
+    <p id="lockWarn" style="font-size:11px;color:#9aa3ad;margin:14px 0 0;text-align:center;display:none;">⚠️ Si tu perds ton mot de passe, tes données seront irrécupérables (chiffrement AES-256).</p>
+  </div>
+</div>
+
+<!-- Data dialog -->
+<dialog id="dlgData" style="width:520px;max-width:95vw;">
+  <div class="dlg-h">📊 Données</div>
+  <div class="dlg-b">
+    <div style="font-size:12px;color:#6b7280;">Sauvegarde, import, et gestion des données locales.</div>
+
+    <div style="border:1px solid #e3e6eb;border-radius:8px;overflow:hidden;">
+      <div style="padding:10px 12px;background:#fafbfc;font-size:12px;font-weight:600;color:#4b5563;text-transform:uppercase;letter-spacing:.4px;">Sauvegarde</div>
+      <div class="dlgrow" onclick="dlgData.close(); exportData();">
+        <div><div class="dlgrow-t">Exporter JSON</div><div class="dlgrow-s">Backup complet de toutes les données, réimportable</div></div>
+        <div class="dlgrow-c">›</div>
+      </div>
+      <div class="dlgrow" onclick="dlgData.close(); exportCSV();">
+        <div><div class="dlgrow-t">Exporter CSV</div><div class="dlgrow-s">Opérations du compte sélectionné (Excel/Numbers)</div></div>
+        <div class="dlgrow-c">›</div>
+      </div>
+      <div class="dlgrow" onclick="dlgData.close(); document.getElementById('importFile').click();">
+        <div><div class="dlgrow-t">Importer JSON</div><div class="dlgrow-s">Remplace les données actuelles</div></div>
+        <div class="dlgrow-c">›</div>
+      </div>
+      <div class="dlgrow" onclick="dlgData.close(); document.getElementById('importCSVFile').click();">
+        <div><div class="dlgrow-t">Importer CSV</div><div class="dlgrow-s">Ajoute des opérations sans effacer</div></div>
+        <div class="dlgrow-c">›</div>
+      </div>
+    </div>
+
+    <div style="border:1px solid #e3e6eb;border-radius:8px;overflow:hidden;">
+      <div style="padding:10px 12px;background:#fafbfc;font-size:12px;font-weight:600;color:#4b5563;text-transform:uppercase;letter-spacing:.4px;">Stockage</div>
+      <div style="padding:10px 12px;font-size:13px;color:#4b5563;display:flex;justify-content:space-between;align-items:center;">
+        <span>IndexedDB local (cet appareil)</span>
+        <span id="dataStorageInfo" style="color:#6b7280;font-size:12px;"></span>
+      </div>
+      <div class="dlgrow danger" onclick="confirmWipeAll();">
+        <div><div class="dlgrow-t" style="color:#c0392b;">Tout effacer</div><div class="dlgrow-s">Supprime tous les comptes, opérations, catégories et rapprochements</div></div>
+        <div class="dlgrow-c">›</div>
+      </div>
+    </div>
+  </div>
+  <div class="dlg-f">
+    <button onclick="dlgData.close()">Fermer</button>
+  </div>
+</dialog>
+
+<!-- Wipe confirmation dialog -->
+<dialog id="dlgWipe">
+  <div class="dlg-h" style="color:#c0392b;">⚠ Tout effacer ?</div>
+  <div class="dlg-b">
+    <div style="font-size:14px;">Cette action est <strong>irréversible</strong>. Toutes les données locales (comptes, opérations, catégories, rapprochements, mot de passe) seront supprimées.</div>
+    <div style="background:#fdecea;border:1px solid #f5c6cb;border-radius:6px;padding:10px 12px;font-size:13px;color:#721c24;">
+      Pense à exporter ton JSON avant si tu veux conserver une sauvegarde.
+    </div>
+    <label style="display:flex;align-items:center;gap:8px;font-size:13px;color:#4b5563;">
+      <input type="checkbox" id="wipeConfirm" style="width:auto;"> Je confirme vouloir tout effacer
+    </label>
+  </div>
+  <div class="dlg-f">
+    <button class="secondary" onclick="dlgWipe.close()">Annuler</button>
+    <button class="danger" id="wipeBtn" onclick="executeWipe()" disabled>Effacer définitivement</button>
+  </div>
+</dialog>
+
+<!-- Security dialog -->
+<dialog id="dlgSecurity">
+  <div class="dlg-h">🔒 Sécurité</div>
+  <div class="dlg-b">
+    <div id="secStatus" style="padding:8px 10px;border-radius:6px;font-size:13px;"></div>
+    <div id="secActions" style="display:grid;gap:8px;"></div>
+  </div>
+  <div class="dlg-f">
+    <button onclick="dlgSecurity.close()">Fermer</button>
+  </div>
+</dialog>
+
+<!-- Change password dialog -->
+<dialog id="dlgPwdChange">
+  <div class="dlg-h" id="pwdChangeTitle">Changer le mot de passe</div>
+  <div class="dlg-b">
+    <label id="pwdOldWrap">Mot de passe actuel <input id="pwdOld" type="password"></label>
+    <label>Nouveau mot de passe <input id="pwdNew" type="password"></label>
+    <label>Confirmation <input id="pwdNew2" type="password"></label>
+    <div id="pwdChangeError" style="color:#c0392b;font-size:12px;min-height:16px;"></div>
+  </div>
+  <div class="dlg-f">
+    <button class="secondary" onclick="dlgPwdChange.close()">Annuler</button>
+    <button onclick="applyPasswordChange()">Valider</button>
+  </div>
+</dialog>
+<main>
+  <aside>
+    <h2>Mes comptes</h2>
+    <div id="accountList"></div>
+    <button style="width:100%; margin-top:10px;" onclick="openAccountDlg()">+ Nouveau compte</button>
+    <h2 style="margin-top:18px;">Catégories</h2>
+    <div id="catList"></div>
+    <button class="secondary" style="width:100%; margin-top:8px;" onclick="openCatDlg()">+ Catégorie</button>
+  </aside>
+
+  <section class="content">
+    <div class="summary" style="grid-template-columns: repeat(5, 1fr);">
+      <div class="card"><div class="lbl">Solde aujourd'hui</div><div class="val" id="sumBalance">—</div></div>
+      <div class="card"><div class="lbl">Solde fin de mois</div><div class="val" id="sumProjected">—</div></div>
+      <div class="card"><div class="lbl">Crédits (mois)</div><div class="val pos" id="sumCredit">—</div></div>
+      <div class="card"><div class="lbl">Débits (mois)</div><div class="val neg" id="sumDebit">—</div></div>
+      <div class="card"><div class="lbl">Non rapprochés</div><div class="val" id="sumPending">—</div></div>
+    </div>
+
+    <div class="toolbar">
+      <strong id="currentAccountName" style="font-size:16px;">—</strong>
+      <span class="pill" id="currentAccountType"></span>
+      <span style="flex:1"></span>
+      <button onclick="openOpDlg()">+ Opération</button>
+      <button class="secondary" onclick="openOpDlg(null,true)">+ À venir</button>
+      <button class="secondary" onclick="openTransferDlg()">⇄ Virement</button>
+      <button class="secondary" onclick="openReconcileDlg()">🏦 Rapprochement</button>
+      <button class="secondary" onclick="editAccount()">Modifier</button>
+      <button class="danger" onclick="deleteAccount()">Supprimer</button>
+    </div>
+
+    <div class="filterbar">
+      <input type="month" id="filterMonth" onchange="render()">
+      <select id="filterCat" onchange="render()"><option value="">Toutes catégories</option></select>
+      <select id="filterRec" onchange="render()">
+        <option value="">Tous statuts</option>
+        <option value="0">Non rapprochés</option>
+        <option value="1">Rapprochés</option>
+      </select>
+      <button class="secondary" onclick="clearFilters()">Réinitialiser</button>
+    </div>
+
+    <table id="opsTable">
+      <thead><tr>
+        <th style="width:30px;">✓</th>
+        <th style="width:100px;">Date</th>
+        <th>Libellé</th>
+        <th>Catégorie</th>
+        <th class="amount">Débit</th>
+        <th class="amount">Crédit</th>
+        <th class="amount">Solde</th>
+        <th style="width:60px;"></th>
+      </tr></thead>
+      <tbody id="opsBody"></tbody>
+    </table>
+
+    <div id="upcomingSection" style="margin-top:18px; display:none;">
+      <h3 style="font-size:14px; color:#374151; margin:0 0 8px; display:flex; align-items:center; gap:8px;">
+        <span>📅 Opérations à venir <span style="color:#6b7280;font-weight:normal;" id="upcomingMonthLbl"></span></span>
+        <span class="pill" id="upcomingCount"></span>
+        <span style="flex:1"></span>
+        <span style="font-size:12px; color:#6b7280;">Entrées : <span class="pos" id="upcomingIn">—</span> · Sorties : <span class="neg" id="upcomingOut">—</span></span>
+      </h3>
+      <table>
+        <thead><tr>
+          <th style="width:100px;">Date</th>
+          <th style="width:60px;">Dans</th>
+          <th>Libellé</th>
+          <th>Catégorie</th>
+          <th class="amount">Débit</th>
+          <th class="amount">Crédit</th>
+          <th class="amount">Solde projeté</th>
+          <th style="width:90px;"></th>
+        </tr></thead>
+        <tbody id="upcomingBody"></tbody>
+      </table>
+    </div>
+
+    <div class="charts">
+      <div class="chart-box"><h3>Évolution du solde</h3><canvas id="chartBalance" height="120"></canvas></div>
+      <div class="chart-box"><h3>Dépenses par catégorie (mois)</h3><canvas id="chartCat" height="120"></canvas></div>
+    </div>
+  </section>
+</main>
+
+<!-- Account dialog -->
+<dialog id="dlgAccount">
+  <div class="dlg-h" id="dlgAccountTitle">Nouveau compte</div>
+  <div class="dlg-b">
+    <label>Nom <input id="accName"></label>
+    <label>Type
+      <select id="accType">
+        <option>Compte courant</option>
+        <option>Livret A</option>
+        <option>LDDS</option>
+        <option>PEL</option>
+        <option>CEL</option>
+        <option>PEA</option>
+        <option>Assurance vie</option>
+        <option>Autre</option>
+      </select>
+    </label>
+    <label>Solde initial (€) <input id="accInit" type="number" step="0.01" value="0"></label>
+  </div>
+  <div class="dlg-f">
+    <button class="secondary" onclick="dlgAccount.close()">Annuler</button>
+    <button onclick="saveAccount()">Enregistrer</button>
+  </div>
+</dialog>
+
+<!-- Operation dialog -->
+<dialog id="dlgOp" style="width:460px;">
+  <div class="dlg-h" id="dlgOpTitle">Nouvelle opération</div>
+  <div class="dlg-b">
+    <label>Date <input id="opDate" type="date"></label>
+    <label>Libellé <input id="opLabel"></label>
+    <div class="row">
+      <label>Type
+        <select id="opType">
+          <option value="debit">Débit</option>
+          <option value="credit">Crédit</option>
+        </select>
+      </label>
+      <label>Montant (€) <input id="opAmount" type="number" step="0.01"></label>
+    </div>
+    <label>Catégorie <select id="opCat"></select></label>
+    <label><input type="checkbox" id="opRec"> Rapproché avec le relevé</label>
+    <fieldset style="border:1px dashed #c7d2e0;border-radius:8px;padding:8px 12px;margin-top:6px;">
+      <legend style="font-size:11px;color:#6b7280;padding:0 6px;">🔁 Récurrence (optionnel)</legend>
+      <label>Fréquence
+        <select id="opFreq" onchange="toggleFreq()">
+          <option value="none">Aucune (opération unique)</option>
+          <option value="weekly">Hebdomadaire</option>
+          <option value="biweekly">Toutes les 2 semaines</option>
+          <option value="monthly">Mensuelle</option>
+          <option value="quarterly">Trimestrielle</option>
+          <option value="yearly">Annuelle</option>
+        </select>
+      </label>
+      <label id="opEndWrap" style="display:none;">Date de fin (incluse) <input id="opEnd" type="date"></label>
+      <div id="opFreqHint" style="font-size:11px;color:#6b7280;display:none;">La date ci-dessus = première occurrence. Les suivantes seront générées jusqu'à la date de fin.</div>
+    </fieldset>
+  </div>
+  <div class="dlg-f">
+    <button class="secondary" onclick="dlgOp.close()">Annuler</button>
+    <button onclick="saveOp()">Enregistrer</button>
+  </div>
+</dialog>
+
+<!-- Transfer dialog -->
+<dialog id="dlgTransfer">
+  <div class="dlg-h">Virement entre comptes</div>
+  <div class="dlg-b">
+    <label>Date <input id="trDate" type="date"></label>
+    <label>De <select id="trFrom"></select></label>
+    <label>Vers <select id="trTo"></select></label>
+    <label>Montant (€) <input id="trAmount" type="number" step="0.01"></label>
+    <label>Libellé <input id="trLabel" placeholder="Virement"></label>
+  </div>
+  <div class="dlg-f">
+    <button class="secondary" onclick="dlgTransfer.close()">Annuler</button>
+    <button onclick="saveTransfer()">Enregistrer</button>
+  </div>
+</dialog>
+
+<!-- Reconciliation dialog -->
+<dialog id="dlgReconcile" style="width:720px;max-width:95vw;">
+  <div class="dlg-h">🏦 Rapprochement bancaire — <span id="recAccName"></span></div>
+  <div class="dlg-b">
+    <div class="row">
+      <label>Date du relevé <input id="recDate" type="date" oninput="refreshReconcileDlg()"></label>
+      <label>Solde du relevé (€) <input id="recBalance" type="number" step="0.01" oninput="refreshReconcileDlg()"></label>
+    </div>
+    <div id="recSummary" style="background:#f1f5fb;border:1px solid #c7dbf5;border-radius:8px;padding:10px 12px;font-size:13px;"></div>
+    <div style="font-size:12px;color:#6b7280;">Coche les opérations qui apparaissent sur ton relevé. L'écart doit tomber à 0.</div>
+    <div id="recOpsList" style="max-height:340px;overflow:auto;border:1px solid #e3e6eb;border-radius:8px;"></div>
+    <div id="recHistory" style="font-size:12px;color:#6b7280;"></div>
+  </div>
+  <div class="dlg-f">
+    <button class="secondary" onclick="dlgReconcile.close()">Fermer</button>
+    <button id="recValidateBtn" onclick="validateReconciliation()" disabled>Valider le rapprochement</button>
+  </div>
+</dialog>
+
+<!-- Category dialog -->
+<dialog id="dlgCat">
+  <div class="dlg-h">Catégories</div>
+  <div class="dlg-b">
+    <div id="catEditList"></div>
+    <div class="row">
+      <input id="newCatName" placeholder="Nom de la catégorie">
+      <button onclick="addCat()">Ajouter</button>
+    </div>
+  </div>
+  <div class="dlg-f">
+    <button onclick="dlgCat.close()">Fermer</button>
+  </div>
+</dialog>
+
+<!-- CSV Import dialog -->
+<dialog id="dlgCSVImport" style="width:660px;max-width:95vw;">
+  <div class="dlg-h">Importer un fichier CSV</div>
+  <div class="dlg-b">
+    <div style="font-size:12px;color:#4b5563;background:#f8fafc;border:1px solid #e3e6eb;border-radius:8px;padding:10px 12px;">
+      <strong>Format attendu (première ligne = en-têtes) :</strong><br>
+      <code>Date,Libellé,Catégorie,Débit,Crédit,Rapproché</code><br>
+      Les colonnes <em>Débit</em> et <em>Crédit</em> sont séparées (valeurs positives).<br>
+      Aussi accepté : une seule colonne <em>Montant</em> (négatif = débit, positif = crédit).<br>
+      Séparateur : virgule <code>,</code> ou point-virgule <code>;</code> — détecté automatiquement.
+    </div>
+    <div class="row">
+      <label>Importer dans le compte
+        <select id="csvTargetAcc"></select>
+      </label>
+    </div>
+    <div id="csvPreviewWrap" style="display:none;">
+      <div id="csvStats" style="font-size:13px;color:#374151;margin-bottom:6px;"></div>
+      <div style="overflow:auto;max-height:260px;border:1px solid #e3e6eb;border-radius:8px;">
+        <table id="csvPreviewTable" style="min-width:500px;">
+          <thead><tr id="csvPreviewHead"></tr></thead>
+          <tbody id="csvPreviewBody"></tbody>
+        </table>
+      </div>
+    </div>
+    <div id="csvError" style="color:#c0392b;font-size:13px;display:none;"></div>
+  </div>
+  <div class="dlg-f">
+    <button class="secondary" onclick="dlgCSVImport.close()">Annuler</button>
+    <button id="csvConfirmBtn" onclick="confirmCSVImport()" disabled>Importer</button>
+  </div>
+</dialog>
+
+<script>
+const DB_NAME    = "gestion_comptes_db";
+const DB_VERSION = 1;
+const DB_STORE   = "settings";
+const KEY_PLAIN  = "plain";
+const KEY_ENC    = "encrypted";
+
+const fmt = n => (n).toLocaleString("fr-FR",{style:"currency",currency:"EUR"});
+const today = () => new Date().toISOString().slice(0,10);
+const uid = () => Date.now().toString(36)+Math.random().toString(36).slice(2,7);
+
+let state = null;
+let currentAcc = null;
+let editingAcc = null, editingOp = null;
+let cryptoKey = null;
+let saveTimer = null;
+
+/* ---------- Firebase Sync ---------- */
+const firebaseConfig = {
+  apiKey: "AIzaSyDRJQnrjL4TQV6MfS7j3ngWbVcfg8e3-lg",
+  authDomain: "gestion-comptes-8ce65.firebaseapp.com",
+  projectId: "gestion-comptes-8ce65",
+  storageBucket: "gestion-comptes-8ce65.firebasestorage.app",
+  messagingSenderId: "401346388473",
+  appId: "1:401346388473:web:02e50bad91ae3f8f799d28"
+};
+firebase.initializeApp(firebaseConfig);
+const fsdb = firebase.firestore();
+const DOC_REF = fsdb.collection("data").doc("main");
+let lastSyncedAt = 0;
+let unsubSnapshot = null;
+
+function setSyncStatus(s) {
+  const el = document.getElementById("syncStatus");
+  if (!el) return;
+  const map = { syncing:["🔄","Synchronisation..."], ok:["☁️","Synchronisé"], offline:["📴","Hors ligne"], error:["⚠️","Erreur de sync"] };
+  const [icon, title] = map[s] || ["☁️",""];
+  el.textContent = icon; el.title = title;
+}
+
+async function syncToFirestore() {
+  if (!state) return;
+  try {
+    setSyncStatus("syncing");
+    const payload = {
+      accounts: state.accounts || [],
+      operations: state.operations || [],
+      categories: state.categories || [],
+      reconciliations: state.reconciliations || [],
+      lastModified: Date.now()
+    };
+    await DOC_REF.set(payload);
+    lastSyncedAt = payload.lastModified;
+    setSyncStatus("ok");
+  } catch(e) {
+    console.warn("Firestore sync error", e);
+    setSyncStatus("error");
+  }
+}
+
+function startRealtimeSync() {
+  if (unsubSnapshot) unsubSnapshot();
+  setSyncStatus("syncing");
+  unsubSnapshot = DOC_REF.onSnapshot(doc => {
+    if (!doc.exists) { setSyncStatus("ok"); return; }
+    const remote = doc.data();
+    if (!remote || !remote.lastModified) { setSyncStatus("ok"); return; }
+    if (remote.lastModified <= lastSyncedAt) { setSyncStatus("ok"); return; }
+    state = {
+      accounts: remote.accounts || [],
+      operations: remote.operations || [],
+      categories: remote.categories || [],
+      reconciliations: remote.reconciliations || []
+    };
+    lastSyncedAt = remote.lastModified;
+    save();
+    render();
+    setSyncStatus("ok");
+  }, err => {
+    console.warn("Firestore listener error", err);
+    setSyncStatus("offline");
+  });
+}
+
+/* ---------- IndexedDB helpers ---------- */
+function openDB(){
+  return new Promise((resolve, reject)=>{
+    const req = indexedDB.open(DB_NAME, DB_VERSION);
+    req.onupgradeneeded = e => {
+      const db = e.target.result;
+      if(!db.objectStoreNames.contains(DB_STORE)){
+        db.createObjectStore(DB_STORE, {keyPath:"key"});
+      }
+    };
+    req.onsuccess = e => resolve(e.target.result);
+    req.onerror   = e => reject(e.target.error);
+  });
+}
+function dbGet(db, key){
+  return new Promise((resolve, reject)=>{
+    const req = db.transaction(DB_STORE,"readonly").objectStore(DB_STORE).get(key);
+    req.onsuccess = e => resolve(e.target.result);
+    req.onerror   = e => reject(e.target.error);
+  });
+}
+function dbPut(db, value){
+  return new Promise((resolve, reject)=>{
+    const req = db.transaction(DB_STORE,"readwrite").objectStore(DB_STORE).put(value);
+    req.onsuccess = () => resolve();
+    req.onerror   = e => reject(e.target.error);
+  });
+}
+function dbDelete(db, key){
+  return new Promise((resolve, reject)=>{
+    const req = db.transaction(DB_STORE,"readwrite").objectStore(DB_STORE).delete(key);
+    req.onsuccess = () => resolve();
+    req.onerror   = e => reject(e.target.error);
+  });
+}
+
+/* ---------- Crypto helpers ---------- */
+const b64enc = bytes => btoa(String.fromCharCode(...new Uint8Array(bytes)));
+const b64dec = s => Uint8Array.from(atob(s), c=>c.charCodeAt(0));
+
+async function deriveKey(password, salt){
+  const km = await crypto.subtle.importKey("raw", new TextEncoder().encode(password), {name:"PBKDF2"}, false, ["deriveKey"]);
+  return crypto.subtle.deriveKey(
+    {name:"PBKDF2", salt, iterations:200000, hash:"SHA-256"},
+    km, {name:"AES-GCM", length:256}, false, ["encrypt","decrypt"]
+  );
+}
+async function encryptState(stateObj, key){
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const ct = await crypto.subtle.encrypt({name:"AES-GCM", iv}, key, new TextEncoder().encode(JSON.stringify(stateObj)));
+  return { iv: b64enc(iv), ct: b64enc(ct) };
+}
+async function decryptState(payload, key){
+  const plain = await crypto.subtle.decrypt({name:"AES-GCM", iv: b64dec(payload.iv)}, key, b64dec(payload.ct));
+  return JSON.parse(new TextDecoder().decode(plain));
+}
+
+function defaultState(){
+  return {
+    accounts: [],
+    operations: [],
+    categories: ["Alimentation","Logement","Transport","Loisirs","Salaire","Épargne","Santé","Autre"]
+  };
+}
+
+/* ---------- Load / save (IndexedDB) ---------- */
+async function load(){
+  const db = await openDB();
+  // chiffré ?
+  const enc = await dbGet(db, KEY_ENC);
+  if(enc && enc.salt) return { encrypted: true, payload: enc };
+  // en clair ?
+  const plain = await dbGet(db, KEY_PLAIN);
+  if(plain && plain.data) return { encrypted: false, data: plain.data };
+  return { encrypted: false, data: defaultState() };
+}
+
+function save(){
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(async ()=>{
+    const db = await openDB();
+    if(cryptoKey){
+      const stored = await dbGet(db, KEY_ENC);
+      const salt = stored.salt;
+      const enc = await encryptState(state, cryptoKey);
+      await dbPut(db, {key: KEY_ENC, salt, ...enc});
+    } else {
+      await dbPut(db, {key: KEY_PLAIN, data: state});
+    }
+    syncToFirestore();
+  }, 200);
+}
+
+/* ---------- Accounts ---------- */
+function openAccountDlg(edit){
+  editingAcc = edit || null;
+  document.getElementById("dlgAccountTitle").textContent = edit ? "Modifier le compte" : "Nouveau compte";
+  const a = edit ? state.accounts.find(x=>x.id===edit) : {name:"",type:"Compte courant",init:0};
+  accName.value = a.name; accType.value = a.type; accInit.value = a.init;
+  dlgAccount.showModal();
+}
+function saveAccount(){
+  const name = accName.value.trim();
+  if(!name) return alert("Nom requis");
+  if(editingAcc){
+    const a = state.accounts.find(x=>x.id===editingAcc);
+    a.name = name; a.type = accType.value; a.init = parseFloat(accInit.value)||0;
+  } else {
+    const a = { id: uid(), name, type: accType.value, init: parseFloat(accInit.value)||0 };
+    state.accounts.push(a);
+    if(!currentAcc) currentAcc = a.id;
+  }
+  save(); dlgAccount.close(); render();
+}
+function editAccount(){ if(currentAcc) openAccountDlg(currentAcc); }
+function deleteAccount(){
+  if(!currentAcc) return;
+  if(!confirm("Supprimer ce compte et toutes ses opérations ?")) return;
+  state.operations = state.operations.filter(o=>o.accountId!==currentAcc && o.toAccountId!==currentAcc);
+  state.accounts = state.accounts.filter(a=>a.id!==currentAcc);
+  currentAcc = state.accounts[0]?.id || null;
+  save(); render();
+}
+
+/* ---------- Categories ---------- */
+function openCatDlg(){ refreshCatEdit(); dlgCat.showModal(); }
+function refreshCatEdit(){
+  catEditList.innerHTML = state.categories.map(c=>
+    `<div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0;">
+      <span>${escape(c)}</span>
+      <button class="secondary" onclick="delCat('${escape(c)}')">Supprimer</button>
+    </div>`).join("");
+}
+function addCat(){
+  const v = newCatName.value.trim();
+  if(v && !state.categories.includes(v)){ state.categories.push(v); save(); newCatName.value=""; refreshCatEdit(); render(); }
+}
+function delCat(c){
+  state.categories = state.categories.filter(x=>x!==c);
+  save(); refreshCatEdit(); render();
+}
+
+/* ---------- Operations ---------- */
+function openOpDlg(edit, future){
+  if(!currentAcc) return alert("Crée d'abord un compte");
+  editingOp = edit || null;
+  document.getElementById("dlgOpTitle").textContent = edit ? "Modifier l'opération" : (future ? "Nouvelle opération à venir" : "Nouvelle opération");
+  fillCatSelect(opCat);
+  opFreq.value = "none"; opEnd.value = ""; toggleFreq();
+  document.querySelector("#dlgOp fieldset").style.display = edit ? "none" : "";
+  if(edit){
+    const o = state.operations.find(x=>x.id===edit);
+    opDate.value = o.date; opLabel.value = o.label;
+    opType.value = o.amount<0 ? "debit":"credit";
+    opAmount.value = Math.abs(o.amount);
+    opCat.value = o.category || "";
+    opRec.checked = !!o.reconciled;
+  } else {
+    const d = new Date();
+    if(future) d.setDate(d.getDate()+1);
+    opDate.value = d.toISOString().slice(0,10);
+    opLabel.value=""; opType.value="debit"; opAmount.value=""; opCat.value=""; opRec.checked=false;
+  }
+  dlgOp.showModal();
+}
+
+function toggleFreq(){
+  const isRec = opFreq.value !== "none";
+  document.getElementById("opEndWrap").style.display = isRec ? "" : "none";
+  document.getElementById("opFreqHint").style.display = isRec ? "" : "none";
+  if(isRec && !opEnd.value){
+    const d = new Date(opDate.value || today());
+    d.setFullYear(d.getFullYear()+1);
+    opEnd.value = d.toISOString().slice(0,10);
+  }
+}
+
+function nextDate(isoDate, freq){
+  const d = new Date(isoDate);
+  if(freq==="weekly") d.setDate(d.getDate()+7);
+  else if(freq==="biweekly") d.setDate(d.getDate()+14);
+  else if(freq==="monthly") d.setMonth(d.getMonth()+1);
+  else if(freq==="quarterly") d.setMonth(d.getMonth()+3);
+  else if(freq==="yearly") d.setFullYear(d.getFullYear()+1);
+  return d.toISOString().slice(0,10);
+}
+function saveOp(){
+  const amt = parseFloat(opAmount.value);
+  if(!opLabel.value.trim() || isNaN(amt) || amt<=0) return alert("Libellé et montant > 0 requis");
+  const signed = opType.value==="debit" ? -Math.abs(amt) : Math.abs(amt);
+  if(editingOp){
+    const o = state.operations.find(x=>x.id===editingOp);
+    o.date = opDate.value; o.label = opLabel.value.trim(); o.amount = signed; o.category = opCat.value; o.reconciled = opRec.checked;
+  } else {
+    const freq = opFreq.value;
+    if(freq === "none"){
+      state.operations.push({
+        id: uid(), accountId: currentAcc, date: opDate.value, label: opLabel.value.trim(),
+        amount: signed, category: opCat.value, reconciled: opRec.checked
+      });
+    } else {
+      if(!opEnd.value || opEnd.value < opDate.value) return alert("Date de fin requise et postérieure à la date de début");
+      const recurrenceId = uid();
+      let d = opDate.value;
+      const end = opEnd.value;
+      let count = 0;
+      const MAX = 500;
+      while(d <= end && count < MAX){
+        state.operations.push({
+          id: uid(), accountId: currentAcc, date: d, label: opLabel.value.trim(),
+          amount: signed, category: opCat.value, reconciled: false,
+          recurrenceId, freq, seriesEnd: end
+        });
+        d = nextDate(d, freq);
+        count++;
+      }
+      if(count === 0) return alert("Aucune occurrence générée — vérifie les dates");
+    }
+  }
+  save(); dlgOp.close(); render();
+}
+function delOp(id){
+  const o = state.operations.find(x=>x.id===id);
+  if(!o) return;
+  if(o.recurrenceId){
+    const choice = prompt("Que supprimer ?\n1 = cette occurrence uniquement\n2 = toutes les occurrences futures (à partir de celle-ci)\n3 = toute la série", "1");
+    if(!choice) return;
+    if(choice === "1"){
+      state.operations = state.operations.filter(x=>x.id!==id);
+    } else if(choice === "2"){
+      state.operations = state.operations.filter(x=>!(x.recurrenceId===o.recurrenceId && x.date >= o.date));
+    } else if(choice === "3"){
+      state.operations = state.operations.filter(x=>x.recurrenceId!==o.recurrenceId);
+    } else return;
+  } else {
+    if(!confirm("Supprimer cette opération ?")) return;
+    state.operations = state.operations.filter(x=>x.id!==id && x.linkId!==id);
+  }
+  save(); render();
+}
+function toggleRec(id){
+  const o = state.operations.find(x=>x.id===id);
+  if(o){ o.reconciled = !o.reconciled; save(); render(); }
+}
+
+/* ---------- Transfers ---------- */
+function openTransferDlg(){
+  if(state.accounts.length<2) return alert("Il faut au moins 2 comptes");
+  trDate.value = today(); trAmount.value=""; trLabel.value="";
+  fillAccSelect(trFrom); fillAccSelect(trTo);
+  trFrom.value = currentAcc;
+  trTo.value = state.accounts.find(a=>a.id!==currentAcc).id;
+  dlgTransfer.showModal();
+}
+function saveTransfer(){
+  const amt = parseFloat(trAmount.value);
+  if(isNaN(amt)||amt<=0) return alert("Montant > 0 requis");
+  if(trFrom.value===trTo.value) return alert("Comptes différents requis");
+  const linkId = uid();
+  const lbl = trLabel.value.trim() || "Virement";
+  const aTo = state.accounts.find(a=>a.id===trTo.value).name;
+  const aFrom = state.accounts.find(a=>a.id===trFrom.value).name;
+  state.operations.push({id: uid(), linkId, accountId: trFrom.value, date: trDate.value, label: `${lbl} → ${aTo}`, amount: -amt, category: "Virement", reconciled:false, transfer:true});
+  state.operations.push({id: uid(), linkId, accountId: trTo.value, date: trDate.value, label: `${lbl} ← ${aFrom}`, amount: amt, category: "Virement", reconciled:false, transfer:true});
+  save(); dlgTransfer.close(); render();
+}
+
+/* ---------- Rapprochement bancaire ---------- */
+function openReconcileDlg(){
+  if(!currentAcc) return alert("Sélectionne un compte");
+  const acc = state.accounts.find(a=>a.id===currentAcc);
+  document.getElementById("recAccName").textContent = acc.name;
+  recDate.value = today();
+  recBalance.value = "";
+  refreshReconcileDlg();
+  dlgReconcile.showModal();
+}
+
+function refreshReconcileDlg(){
+  if(!currentAcc) return;
+  const acc = state.accounts.find(a=>a.id===currentAcc);
+  const dateLimit = recDate.value || today();
+  const ops = state.operations
+    .filter(o=>o.accountId===currentAcc && o.date <= dateLimit)
+    .sort((a,b)=>a.date.localeCompare(b.date));
+
+  const reconciledSum = ops.filter(o=>o.reconciled).reduce((s,o)=>s+o.amount,0);
+  const computed = acc.init + reconciledSum;
+  const stmtRaw = recBalance.value;
+  const stmt = stmtRaw === "" ? null : parseFloat(stmtRaw);
+  const ecart = (stmt === null || isNaN(stmt)) ? null : (stmt - computed);
+  const ok = ecart !== null && Math.abs(ecart) < 0.01;
+
+  document.getElementById("recSummary").innerHTML = `
+    <div style="display:flex;justify-content:space-between;"><span>Solde initial du compte</span><span>${fmt(acc.init)}</span></div>
+    <div style="display:flex;justify-content:space-between;"><span>Total des opérations cochées (${ops.filter(o=>o.reconciled).length})</span><span>${fmt(reconciledSum)}</span></div>
+    <div style="display:flex;justify-content:space-between;font-weight:600;border-top:1px solid #c7dbf5;padding-top:6px;margin-top:6px;"><span>Solde calculé (initial + cochées)</span><span>${fmt(computed)}</span></div>
+    ${stmt!==null && !isNaN(stmt) ? `<div style="display:flex;justify-content:space-between;"><span>Solde du relevé</span><span>${fmt(stmt)}</span></div>
+      <div style="display:flex;justify-content:space-between;font-weight:700;color:${ok?'#138a36':'#c0392b'};border-top:1px solid #c7dbf5;padding-top:6px;margin-top:6px;"><span>Écart</span><span>${ok?'✓ Rapprochement équilibré':fmt(ecart)}</span></div>` : `<div style="color:#6b7280;font-size:12px;margin-top:4px;">Saisis le solde du relevé pour voir l'écart.</div>`}
+  `;
+
+  document.getElementById("recOpsList").innerHTML = ops.length === 0
+    ? `<div class="empty">Aucune opération jusqu'à cette date</div>`
+    : `<table>
+      <thead><tr>
+        <th style="width:30px;"></th>
+        <th style="width:90px;">Date</th>
+        <th>Libellé</th>
+        <th class="amount">Débit</th>
+        <th class="amount">Crédit</th>
+      </tr></thead>
+      <tbody>
+        ${ops.slice().reverse().map(o=>`
+          <tr class="${o.reconciled?'reconciled':''}">
+            <td><input type="checkbox" ${o.reconciled?'checked':''} onchange="toggleRecAndRefresh('${o.id}')"></td>
+            <td>${o.date.split("-").reverse().join("/")}</td>
+            <td>${escape(o.label)}${o.locked?' 🔒':''}</td>
+            <td class="amount neg">${o.amount<0?fmt(-o.amount):""}</td>
+            <td class="amount pos">${o.amount>0?fmt(o.amount):""}</td>
+          </tr>
+        `).join("")}
+      </tbody>
+    </table>`;
+
+  document.getElementById("recValidateBtn").disabled = !ok;
+
+  const history = (state.reconciliations||[]).filter(r=>r.accountId===currentAcc).sort((a,b)=>b.statementDate.localeCompare(a.statementDate));
+  document.getElementById("recHistory").innerHTML = history.length
+    ? `Derniers rapprochements : ${history.slice(0,3).map(r=>`<strong>${r.statementDate.split("-").reverse().join("/")}</strong> (${fmt(r.statementBalance)}, ${r.opIds.length} op.)`).join(" · ")}`
+    : "Aucun rapprochement validé pour ce compte.";
+}
+
+function toggleRecAndRefresh(id){
+  const o = state.operations.find(x=>x.id===id);
+  if(!o) return;
+  if(o.locked && !confirm("Cette opération fait partie d'un rapprochement déjà validé. Modifier sa coche peut casser l'historique. Continuer ?")) return;
+  o.reconciled = !o.reconciled;
+  save();
+  refreshReconcileDlg();
+}
+
+function validateReconciliation(){
+  if(!currentAcc) return;
+  const acc = state.accounts.find(a=>a.id===currentAcc);
+  const stmt = parseFloat(recBalance.value);
+  if(isNaN(stmt)) return alert("Solde du relevé requis");
+  if(!recDate.value) return alert("Date du relevé requise");
+
+  if(!state.reconciliations) state.reconciliations = [];
+  const ops = state.operations.filter(o=>o.accountId===currentAcc && o.reconciled && o.date<=recDate.value);
+  ops.forEach(o=>{ o.locked = true; o.lockedAt = recDate.value; });
+
+  state.reconciliations.push({
+    id: uid(),
+    accountId: currentAcc,
+    statementDate: recDate.value,
+    statementBalance: stmt,
+    validatedAt: new Date().toISOString(),
+    opIds: ops.map(o=>o.id)
+  });
+
+  save();
+  alert(`✓ Rapprochement validé\n\nCompte : ${acc.name}\nDate du relevé : ${recDate.value.split("-").reverse().join("/")}\nSolde : ${fmt(stmt)}\n${ops.length} opération(s) figée(s) avec le verrou 🔒`);
+  dlgReconcile.close();
+  render();
+}
+
+/* ---------- Helpers ---------- */
+function fillCatSelect(sel){
+  sel.innerHTML = `<option value="">—</option>` + state.categories.map(c=>`<option>${escape(c)}</option>`).join("");
+}
+function fillAccSelect(sel){
+  sel.innerHTML = state.accounts.map(a=>`<option value="${a.id}">${escape(a.name)}</option>`).join("");
+}
+function escape(s){ return String(s).replace(/[&<>"']/g, c=>({ "&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c])); }
+function freqLabel(f){ return ({weekly:"hebdo",biweekly:"2 sem.",monthly:"mensuel",quarterly:"trim.",yearly:"annuel"})[f]||""; }
+
+function accountBalance(accId){
+  const a = state.accounts.find(x=>x.id===accId);
+  if(!a) return 0;
+  const tdy = today();
+  return a.init + state.operations.filter(o=>o.accountId===accId && o.date<=tdy).reduce((s,o)=>s+o.amount,0);
+}
+
+/* ---------- Render ---------- */
+function clearFilters(){ filterMonth.value=""; filterCat.value=""; filterRec.value=""; render(); }
+
+function render(){
+  accountList.innerHTML = state.accounts.length===0
+    ? `<div class="empty" style="padding:14px 0;">Aucun compte</div>`
+    : state.accounts.map(a=>{
+      const bal = accountBalance(a.id);
+      return `<div class="acc-item ${a.id===currentAcc?'active':''}" onclick="selectAcc('${a.id}')">
+        <div class="acc-name">${escape(a.name)}</div>
+        <div class="acc-type">${escape(a.type)}</div>
+        <div class="acc-bal ${bal<0?'neg':'pos'}">${fmt(bal)}</div>
+      </div>`;
+    }).join("");
+
+  const totals = {};
+  state.operations.forEach(o=>{
+    if(o.amount<0 && o.category) totals[o.category] = (totals[o.category]||0) + (-o.amount);
+  });
+  catList.innerHTML = state.categories.map(c=>
+    `<div style="display:flex;justify-content:space-between;font-size:12px;padding:3px 4px;color:#4b5563;">
+      <span>${escape(c)}</span><span>${fmt(totals[c]||0)}</span></div>`).join("");
+
+  filterCat.innerHTML = `<option value="">Toutes catégories</option>` + state.categories.map(c=>`<option>${escape(c)}</option>`).join("");
+
+  if(!currentAcc){
+    currentAccountName.textContent = "Aucun compte";
+    currentAccountType.textContent = "";
+    sumBalance.textContent = sumProjected.textContent = sumCredit.textContent = sumDebit.textContent = sumPending.textContent = "—";
+    opsBody.innerHTML = `<tr><td colspan="8" class="empty">Crée un compte pour commencer</td></tr>`;
+    document.getElementById("upcomingSection").style.display = "none";
+    drawCharts(); return;
+  }
+
+  const acc = state.accounts.find(a=>a.id===currentAcc);
+  currentAccountName.textContent = acc.name;
+  currentAccountType.textContent = acc.type;
+
+  const tdy = today();
+
+  let ops = state.operations.filter(o=>o.accountId===currentAcc).sort((a,b)=>a.date.localeCompare(b.date));
+
+  let run = acc.init;
+  ops = ops.map(o=>{ run += o.amount; return {...o, running: run}; });
+
+  const curMonth = new Date().toISOString().slice(0,7);
+  const monthEnd = curMonth + "-31";
+  const pastOps = ops.filter(o=>o.date <= tdy);
+  const upcomingOps = ops.filter(o=>o.date > tdy && o.date.startsWith(curMonth));
+
+  const balToday = acc.init + pastOps.reduce((s,o)=>s+o.amount,0);
+  const balProjected = acc.init + ops.filter(o=>o.date <= monthEnd).reduce((s,o)=>s+o.amount,0);
+
+  const fm = filterMonth.value, fc = filterCat.value, fr = filterRec.value;
+  const filtered = pastOps.filter(o=>{
+    if(fm && !o.date.startsWith(fm)) return false;
+    if(fc && o.category!==fc) return false;
+    if(fr==="0" && o.reconciled) return false;
+    if(fr==="1" && !o.reconciled) return false;
+    return true;
+  });
+
+  const refMonth = fm || new Date().toISOString().slice(0,7);
+  const monthOps = pastOps.filter(o=>o.date.startsWith(refMonth));
+  const credit = monthOps.filter(o=>o.amount>0).reduce((s,o)=>s+o.amount,0);
+  const debit = monthOps.filter(o=>o.amount<0).reduce((s,o)=>s+(-o.amount),0);
+  const pending = pastOps.filter(o=>!o.reconciled).length;
+
+  sumBalance.textContent = fmt(balToday);
+  sumBalance.className = "val " + (balToday<0?"neg":"pos");
+  sumProjected.textContent = fmt(balProjected);
+  sumProjected.className = "val " + (balProjected<0?"neg":"pos");
+  sumCredit.textContent = fmt(credit);
+  sumDebit.textContent = fmt(debit);
+  sumPending.textContent = pending;
+
+  opsBody.innerHTML = filtered.length===0
+    ? `<tr><td colspan="8" class="empty">Aucune opération</td></tr>`
+    : filtered.slice().reverse().map(o=>`
+        <tr class="${o.reconciled?'reconciled':''}">
+          <td><input type="checkbox" ${o.reconciled?'checked':''} onchange="toggleRec('${o.id}')"></td>
+          <td>${o.date.split("-").reverse().join("/")}</td>
+          <td>${escape(o.label)}${o.locked?' 🔒':''}${o.transfer?' <span class="pill">virement</span>':''}${o.recurrenceId?` <span class="pill" title="Série ${o.freq} — fin ${o.seriesEnd||'?'}">🔁 ${freqLabel(o.freq)}</span>`:''}</td>
+          <td>${escape(o.category||"")}</td>
+          <td class="amount neg">${o.amount<0?fmt(-o.amount):""}</td>
+          <td class="amount pos">${o.amount>0?fmt(o.amount):""}</td>
+          <td class="amount">${fmt(o.running)}</td>
+          <td>
+            ${o.transfer?'':`<button class="secondary" style="padding:3px 6px;font-size:11px;" onclick="openOpDlg('${o.id}')">✎</button>`}
+            <button class="danger" style="padding:3px 6px;font-size:11px;" onclick="delOp('${o.id}')">✕</button>
+          </td>
+        </tr>
+      `).join("");
+
+  const upSec = document.getElementById("upcomingSection");
+  if(upcomingOps.length === 0){
+    upSec.style.display = "none";
+  } else {
+    upSec.style.display = "";
+    const upIn = upcomingOps.filter(o=>o.amount>0).reduce((s,o)=>s+o.amount,0);
+    const upOut = upcomingOps.filter(o=>o.amount<0).reduce((s,o)=>s+(-o.amount),0);
+    document.getElementById("upcomingMonthLbl").textContent = "— " + new Date(curMonth+"-01").toLocaleDateString("fr-FR",{month:"long",year:"numeric"});
+    document.getElementById("upcomingCount").textContent = upcomingOps.length;
+    document.getElementById("upcomingIn").textContent = fmt(upIn);
+    document.getElementById("upcomingOut").textContent = fmt(upOut);
+    document.getElementById("upcomingBody").innerHTML = upcomingOps.map(o=>{
+      const days = Math.ceil((new Date(o.date) - new Date(tdy))/86400000);
+      return `
+        <tr style="background:#fffbf2;">
+          <td>${o.date.split("-").reverse().join("/")}</td>
+          <td><span class="pill">J+${days}</span></td>
+          <td>${escape(o.label)}${o.transfer?' <span class="pill">virement</span>':''}${o.recurrenceId?` <span class="pill" title="Série ${o.freq} — fin ${o.seriesEnd||'?'}">🔁 ${freqLabel(o.freq)}</span>`:''}</td>
+          <td>${escape(o.category||"")}</td>
+          <td class="amount neg">${o.amount<0?fmt(-o.amount):""}</td>
+          <td class="amount pos">${o.amount>0?fmt(o.amount):""}</td>
+          <td class="amount">${fmt(o.running)}</td>
+          <td>
+            <button class="secondary" style="padding:3px 6px;font-size:11px;" title="Valider maintenant (date du jour)" onclick="validateUpcoming('${o.id}')">✓</button>
+            ${o.transfer?'':`<button class="secondary" style="padding:3px 6px;font-size:11px;" onclick="openOpDlg('${o.id}')">✎</button>`}
+            <button class="danger" style="padding:3px 6px;font-size:11px;" onclick="delOp('${o.id}')">✕</button>
+          </td>
+        </tr>`;
+    }).join("");
+  }
+
+  drawCharts(ops, refMonth);
+}
+
+function validateUpcoming(id){
+  const o = state.operations.find(x=>x.id===id);
+  if(!o) return;
+  if(!confirm("Marquer cette opération comme effectuée aujourd'hui ?")) return;
+  o.date = today();
+  if(o.linkId){
+    state.operations.filter(x=>x.linkId===o.linkId).forEach(x=>x.date=today());
+  }
+  save(); render();
+}
+
+let chartB, chartC;
+function drawCharts(ops, refMonth){
+  const ctxB = document.getElementById("chartBalance").getContext("2d");
+  const labels = ops?ops.map(o=>o.date.split("-").reverse().slice(0,2).join("/")):[];
+  const data = ops?ops.map(o=>o.running):[];
+  if(chartB) chartB.destroy();
+  chartB = new Chart(ctxB,{type:"line",data:{labels, datasets:[{label:"Solde", data, borderColor:"#1f3a5f", backgroundColor:"rgba(31,58,95,.1)", fill:true, tension:.2, pointRadius:2}]}, options:{plugins:{legend:{display:false}}, scales:{y:{ticks:{callback:v=>fmt(v)}}}}});
+
+  const ctxC = document.getElementById("chartCat").getContext("2d");
+  const monthOps = (ops||[]).filter(o=>refMonth && o.date.startsWith(refMonth) && o.amount<0 && o.category);
+  const totals = {};
+  monthOps.forEach(o=>{ totals[o.category] = (totals[o.category]||0) + (-o.amount); });
+  if(chartC) chartC.destroy();
+  chartC = new Chart(ctxC,{type:"doughnut",data:{labels:Object.keys(totals),datasets:[{data:Object.values(totals), backgroundColor:["#1f3a5f","#2e86ab","#a23b72","#f18f01","#c73e1d","#3a7d44","#6b5ca5","#888"]}]}, options:{plugins:{legend:{position:"right",labels:{font:{size:11}}}}}});
+}
+
+function selectAcc(id){ currentAcc = id; render(); }
+
+/* ---------- Import / Export ---------- */
+function exportData(){
+  const blob = new Blob([JSON.stringify(state,null,2)],{type:"application/json"});
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = `comptes-${today()}.json`;
+  a.click();
+}
+function importData(ev){
+  const f = ev.target.files[0];
+  ev.target.value = "";
+  if(!f) return;
+  const r = new FileReader();
+  r.onload = e=>{
+    let d;
+    try { d = JSON.parse(e.target.result); }
+    catch(err){ alert("Fichier JSON illisible : " + err.message); return; }
+    if(!d || !Array.isArray(d.accounts) || !Array.isArray(d.operations)){
+      alert("Structure invalide : il manque 'accounts' ou 'operations'."); return;
+    }
+    if(!Array.isArray(d.categories)) d.categories = state.categories || [];
+    if(!confirm(`Remplacer les données actuelles par :\n- ${d.accounts.length} compte(s)\n- ${d.operations.length} opération(s)\n- ${d.categories.length} catégorie(s) ?`)) return;
+    try {
+      state = d;
+      currentAcc = state.accounts[0]?.id || null;
+      save();
+      render();
+      alert("Import réussi.");
+    } catch(err){
+      alert("Erreur pendant l'import : " + err.message);
+    }
+  };
+  r.onerror = ()=> alert("Lecture du fichier impossible.");
+  r.readAsText(f);
+}
+
+/* ---------- CSV Export ---------- */
+function exportCSV(){
+  if(!currentAcc) return alert("Sélectionne un compte d'abord");
+  const acc = state.accounts.find(a=>a.id===currentAcc);
+  const ops = state.operations
+    .filter(o=>o.accountId===currentAcc)
+    .sort((a,b)=>a.date.localeCompare(b.date));
+  const csvEsc = v => { const s=String(v||""); return s.includes(",")||s.includes(";")||s.includes('"')||s.includes("\n") ? `"${s.replace(/"/g,'""')}"` : s; };
+  const rows = [["Date","Libellé","Catégorie","Débit","Crédit","Rapproché","Compte"]];
+  ops.forEach(o=>{
+    rows.push([
+      o.date,
+      csvEsc(o.label),
+      csvEsc(o.category||""),
+      o.amount<0 ? (-o.amount).toFixed(2) : "",
+      o.amount>0 ? o.amount.toFixed(2) : "",
+      o.reconciled ? "1" : "0",
+      csvEsc(acc.name)
+    ]);
+  });
+  const csv = rows.map(r=>r.join(",")).join("\n");
+  const blob = new Blob(["﻿"+csv],{type:"text/csv;charset=utf-8"});
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = `${acc.name.replace(/[^a-z0-9]/gi,"-")}-${today()}.csv`;
+  a.click();
+}
+
+/* ---------- CSV Import ---------- */
+let csvParsedRows = [];
+
+function loadCSV(ev){
+  const f = ev.target.files[0];
+  ev.target.value = "";
+  if(!f) return;
+  const r = new FileReader();
+  r.onload = e => parseAndPreviewCSV(e.target.result);
+  r.onerror = ()=> alert("Lecture du fichier impossible.");
+  r.readAsText(f, "UTF-8");
+}
+
+function parseCSVLine(line, sep){
+  const result = [];
+  let cur = "", inQ = false;
+  for(let i=0; i<line.length; i++){
+    const c = line[i];
+    if(c==='"'){ if(inQ && line[i+1]==='"'){ cur+='"'; i++; } else inQ=!inQ; }
+    else if(c===sep && !inQ){ result.push(cur.trim()); cur=""; }
+    else cur+=c;
+  }
+  result.push(cur.trim());
+  return result;
+}
+
+function parseAndPreviewCSV(text){
+  // BOM
+  if(text.charCodeAt(0)===0xFEFF) text=text.slice(1);
+  const lines = text.split(/\r?\n/).filter(l=>l.trim());
+  if(lines.length<2){ showCSVError("Le fichier doit contenir au moins une ligne d'en-têtes et une ligne de données."); return; }
+
+  // Détection séparateur
+  const sep = (lines[0].split(";").length >= lines[0].split(",").length && lines[0].includes(";")) ? ";" : ",";
+  const headers = parseCSVLine(lines[0], sep).map(h=>h.toLowerCase().trim()
+    .replace(/[éèê]/g,"e").replace(/[àâ]/g,"a").replace(/[îï]/g,"i").replace(/[ôö]/g,"o").replace(/[ùûü]/g,"u")
+    .replace(/[^a-z0-9]/g,""));
+
+  // Colonnes requises
+  const iDate   = headers.findIndex(h=>h.includes("date"));
+  const iLabel  = headers.findIndex(h=>h.includes("libelle")||h.includes("label")||h.includes("intitule")||h.includes("description")||h.includes("operation"));
+  const iDebit  = headers.findIndex(h=>h==="debit"||h==="sortie"||h==="depense");
+  const iCredit = headers.findIndex(h=>h==="credit"||h==="entree"||h==="recette");
+  const iAmount = headers.findIndex(h=>h==="montant"||h==="amount"||h==="valeur");
+  const iCat    = headers.findIndex(h=>h.includes("categorie")||h.includes("category"));
+  const iRec    = headers.findIndex(h=>h.includes("rapproche")||h.includes("reconcil"));
+
+  if(iDate===-1||iLabel===-1){ showCSVError(`Colonnes obligatoires introuvables.\nEn-têtes détectés : ${headers.join(", ")}\nAttendus : Date, Libellé, et Débit+Crédit ou Montant.`); return; }
+  if(iDebit===-1&&iCredit===-1&&iAmount===-1){ showCSVError(`Aucune colonne de montant trouvée.\nEn-têtes détectés : ${headers.join(", ")}`); return; }
+
+  // Parse rows
+  const parsed = [];
+  const errors = [];
+  for(let i=1;i<lines.length;i++){
+    const cols = parseCSVLine(lines[i], sep);
+    const rawDate  = cols[iDate]||"";
+    const rawLabel = cols[iLabel]||"";
+
+    // Date normalization : DD/MM/YYYY → YYYY-MM-DD
+    let date = rawDate.trim();
+    const dmY = date.match(/^(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{4})$/);
+    const Ymd = date.match(/^(\d{4})[\/\-\.](\d{1,2})[\/\-\.](\d{1,2})$/);
+    if(dmY) date=`${dmY[3]}-${dmY[2].padStart(2,"0")}-${dmY[1].padStart(2,"0")}`;
+    else if(Ymd) date=`${Ymd[1]}-${Ymd[2].padStart(2,"0")}-${Ymd[3].padStart(2,"0")}`;
+
+    if(!date.match(/^\d{4}-\d{2}-\d{2}$/)){ errors.push(`Ligne ${i+1} : date invalide "${rawDate}"`); continue; }
+    if(!rawLabel.trim()){ errors.push(`Ligne ${i+1} : libellé vide`); continue; }
+
+    let amount = 0;
+    if(iDebit!==-1||iCredit!==-1){
+      const d = parseFloat((cols[iDebit]||"").replace(",","."))||0;
+      const c = parseFloat((cols[iCredit]||"").replace(",","."))||0;
+      amount = c - d;
+    } else {
+      amount = parseFloat((cols[iAmount]||"").replace(",","."))||0;
+    }
+    if(amount===0&&rawLabel.trim()==="") continue;
+
+    const category = iCat>=0 ? (cols[iCat]||"").trim() : "";
+    const reconciled = iRec>=0 ? (cols[iRec]||"").trim()==="1" : false;
+    parsed.push({date,label:rawLabel.trim(),amount,category,reconciled});
+  }
+
+  if(parsed.length===0){ showCSVError("Aucune ligne valide trouvée.\n"+(errors.length?errors.slice(0,5).join("\n"):"")); return; }
+
+  csvParsedRows = parsed;
+  showCSVPreview(parsed, errors, headers, sep);
+}
+
+function showCSVError(msg){
+  document.getElementById("csvError").textContent=msg;
+  document.getElementById("csvError").style.display="";
+  document.getElementById("csvPreviewWrap").style.display="none";
+  document.getElementById("csvConfirmBtn").disabled=true;
+  fillAccSelect(document.getElementById("csvTargetAcc"));
+  if(currentAcc) document.getElementById("csvTargetAcc").value=currentAcc;
+  dlgCSVImport.showModal();
+}
+
+function showCSVPreview(rows, errors, headers, sep){
+  document.getElementById("csvError").style.display="none";
+  document.getElementById("csvPreviewWrap").style.display="";
+  document.getElementById("csvStats").innerHTML =
+    `<strong>${rows.length}</strong> opération(s) prêtes à importer${errors.length?` · <span style="color:#c0392b;">${errors.length} ligne(s) ignorée(s)</span>`:""}`;
+
+  const cols=["Date","Libellé","Catégorie","Montant","Rapproché"];
+  document.getElementById("csvPreviewHead").innerHTML=cols.map(c=>`<th>${c}</th>`).join("");
+  const preview=rows.slice(0,8);
+  document.getElementById("csvPreviewBody").innerHTML=preview.map(r=>`<tr>
+    <td>${r.date}</td>
+    <td>${escape(r.label)}</td>
+    <td>${escape(r.category||"")}</td>
+    <td class="amount ${r.amount<0?'neg':'pos'}">${r.amount<0?'−'+(-r.amount).toFixed(2):'+'+r.amount.toFixed(2)} €</td>
+    <td style="text-align:center;">${r.reconciled?"✓":""}</td>
+  </tr>`).join("")+(rows.length>8?`<tr><td colspan="5" style="text-align:center;color:#6b7280;font-size:12px;">… et ${rows.length-8} ligne(s) de plus</td></tr>`:"");
+
+  fillAccSelect(document.getElementById("csvTargetAcc"));
+  if(currentAcc) document.getElementById("csvTargetAcc").value=currentAcc;
+  document.getElementById("csvConfirmBtn").disabled=false;
+  dlgCSVImport.showModal();
+}
+
+function confirmCSVImport(){
+  const accId = document.getElementById("csvTargetAcc").value;
+  if(!accId) return alert("Sélectionne un compte cible");
+  let added=0, skipped=0;
+  csvParsedRows.forEach(r=>{
+    // Vérification doublon exact (même date + libellé + montant)
+    const dup = state.operations.some(o=>o.accountId===accId&&o.date===r.date&&o.label===r.label&&o.amount===r.amount);
+    if(dup){ skipped++; return; }
+    state.operations.push({id:uid(),accountId:accId,date:r.date,label:r.label,amount:r.amount,category:r.category,reconciled:r.reconciled});
+    added++;
+  });
+  save(); dlgCSVImport.close(); currentAcc=accId; render();
+  alert(`Import CSV terminé :\n✓ ${added} opération(s) ajoutée(s)${skipped?`\n⊘ ${skipped} doublon(s) ignoré(s)`:""}`);
+}
+
+/* ---------- Data dialog (Données tab) ---------- */
+function openDataDlg(){
+  // storage info
+  try {
+    const counts = `${state.accounts.length} compte(s) · ${state.operations.length} opération(s) · ${state.categories.length} catégorie(s)`;
+    document.getElementById("dataStorageInfo").textContent = counts;
+  } catch {}
+  dlgData.showModal();
+}
+
+function confirmWipeAll(){
+  dlgData.close();
+  document.getElementById("wipeConfirm").checked = false;
+  document.getElementById("wipeBtn").disabled = true;
+  dlgWipe.showModal();
+}
+
+document.addEventListener("DOMContentLoaded", () => {
+  const cb = document.getElementById("wipeConfirm");
+  if(cb) cb.addEventListener("change", e => {
+    document.getElementById("wipeBtn").disabled = !e.target.checked;
+  });
+});
+
+async function executeWipe(){
+  try {
+    clearTimeout(saveTimer);
+    const db = await openDB();
+    await dbDelete(db, KEY_PLAIN);
+    await dbDelete(db, KEY_ENC);
+    try { localStorage.clear(); } catch {}
+    cryptoKey = null;
+    state = defaultState();
+    currentAcc = null;
+    dlgWipe.close();
+    alert("✓ Toutes les données ont été effacées.");
+    location.reload();
+  } catch(e){
+    alert("Erreur pendant l'effacement : " + (e.message || e));
+  }
+}
+
+/* ---------- Lock / unlock / first setup ---------- */
+function showLockOverlay(mode){
+  const ov = document.getElementById("lockOverlay");
+  ov.style.display = "flex";
+  document.getElementById("lockPwd").value = "";
+  document.getElementById("lockPwd2").value = "";
+  document.getElementById("lockError").textContent = "";
+
+  if(mode === "unlock"){
+    document.getElementById("lockTitle").textContent = "🔒 Application verrouillée";
+    document.getElementById("lockSubtitle").textContent = "Saisis ton mot de passe pour accéder à tes comptes.";
+    document.getElementById("lockPwd2").style.display = "none";
+    document.getElementById("lockBtn").textContent = "Déverrouiller";
+    document.getElementById("lockWarn").style.display = "none";
+  } else {
+    document.getElementById("lockTitle").textContent = mode==="setup-optional" ? "🔒 Activer la protection" : "🔒 Définir un mot de passe";
+    document.getElementById("lockSubtitle").innerHTML = mode==="setup-optional"
+      ? "Choisis un mot de passe pour chiffrer tes données existantes. <br><strong>Tu peux ignorer et utiliser l'app sans protection.</strong>"
+      : "Choisis un mot de passe. Tes données seront chiffrées localement (AES-256).";
+    document.getElementById("lockPwd2").style.display = "";
+    document.getElementById("lockBtn").textContent = "Activer";
+    document.getElementById("lockWarn").style.display = "";
+    if(mode==="setup-optional"){
+      let skip = document.getElementById("lockSkip");
+      if(!skip){
+        skip = document.createElement("button");
+        skip.id = "lockSkip";
+        skip.className = "secondary";
+        skip.textContent = "Continuer sans mot de passe";
+        skip.style.cssText = "width:100%;margin-top:8px;";
+        skip.onclick = ()=>{ document.getElementById("lockOverlay").style.display="none"; afterUnlock(); };
+        document.getElementById("lockBtn").after(skip);
+      }
+    }
+  }
+  setTimeout(()=>document.getElementById("lockPwd").focus(), 50);
+}
+
+document.getElementById("lockBtn").onclick = handleLockSubmit;
+document.getElementById("lockPwd").addEventListener("keydown", e=>{ if(e.key==="Enter") handleLockSubmit(); });
+document.getElementById("lockPwd2").addEventListener("keydown", e=>{ if(e.key==="Enter") handleLockSubmit(); });
+
+async function handleLockSubmit(){
+  const pwd = document.getElementById("lockPwd").value;
+  const pwd2 = document.getElementById("lockPwd2").value;
+  const err = document.getElementById("lockError");
+  err.textContent = "";
+  if(!pwd) { err.textContent = "Mot de passe requis"; return; }
+
+  const isSetup = document.getElementById("lockPwd2").style.display !== "none";
+  const db = await openDB();
+
+  if(isSetup){
+    if(pwd.length < 4){ err.textContent = "4 caractères minimum"; return; }
+    if(pwd !== pwd2){ err.textContent = "Les mots de passe ne correspondent pas"; return; }
+    const salt = crypto.getRandomValues(new Uint8Array(16));
+    const key = await deriveKey(pwd, salt);
+    const enc = await encryptState(state, key);
+    await dbPut(db, {key: KEY_ENC, salt: b64enc(salt), ...enc});
+    await dbDelete(db, KEY_PLAIN);
+    cryptoKey = key;
+    document.getElementById("lockOverlay").style.display = "none";
+    afterUnlock();
+  } else {
+    try {
+      const stored = await dbGet(db, KEY_ENC);
+      const salt = b64dec(stored.salt);
+      const key = await deriveKey(pwd, salt);
+      const decrypted = await decryptState(stored, key);
+      state = decrypted;
+      cryptoKey = key;
+      document.getElementById("lockOverlay").style.display = "none";
+      afterUnlock();
+    } catch(e){
+      err.textContent = "Mot de passe incorrect";
+    }
+  }
+}
+
+function afterUnlock(){
+  currentAcc = state.accounts[0]?.id || null;
+  startRealtimeSync();
+  render();
+}
+
+/* ---------- Security dialog ---------- */
+function openSecurityDlg(){
+  const isProtected = !!cryptoKey;
+  document.getElementById("secStatus").innerHTML = isProtected
+    ? `<span style="background:#e8f5ec;color:#138a36;padding:6px 10px;border-radius:6px;display:inline-block;">✓ Protection active — données chiffrées (AES-256)</span>`
+    : `<span style="background:#fdecea;color:#c0392b;padding:6px 10px;border-radius:6px;display:inline-block;">⚠ Aucun mot de passe — données en clair dans le navigateur</span>`;
+  const acts = document.getElementById("secActions");
+  acts.innerHTML = "";
+  const mk = (label, fn, danger) => {
+    const b = document.createElement("button");
+    b.textContent = label;
+    if(danger) b.className = "danger";
+    else if(!isProtected) b.className = "secondary";
+    b.onclick = fn;
+    acts.appendChild(b);
+  };
+  if(isProtected){
+    mk("Changer le mot de passe", ()=>{ dlgSecurity.close(); openPwdChangeDlg(false); });
+    mk("Désactiver la protection (déchiffrer)", ()=>{ dlgSecurity.close(); openPwdChangeDlg(true); }, true);
+    mk("Verrouiller maintenant", ()=>{
+      dlgSecurity.close();
+      cryptoKey = null;
+      state = null;
+      showLockOverlay("unlock");
+    });
+  } else {
+    mk("Activer un mot de passe", ()=>{ dlgSecurity.close(); openPwdChangeDlg(false, true); });
+  }
+  dlgSecurity.showModal();
+}
+
+function openPwdChangeDlg(disableMode, setupMode){
+  document.getElementById("pwdChangeTitle").textContent =
+    setupMode ? "Activer la protection" :
+    disableMode ? "Désactiver la protection" : "Changer le mot de passe";
+  document.getElementById("pwdOldWrap").style.display = setupMode ? "none" : "";
+  document.getElementById("pwdOld").value = "";
+  document.getElementById("pwdNew").value = "";
+  document.getElementById("pwdNew2").value = "";
+  document.getElementById("pwdChangeError").textContent = "";
+  dlgPwdChange.dataset.mode = setupMode ? "setup" : disableMode ? "disable" : "change";
+  if(disableMode){
+    document.querySelectorAll("#dlgPwdChange label").forEach((l,i)=>{ if(i>0) l.style.display = "none"; });
+  } else {
+    document.querySelectorAll("#dlgPwdChange label").forEach(l => l.style.display = "");
+    if(setupMode) document.getElementById("pwdOldWrap").style.display = "none";
+  }
+  dlgPwdChange.showModal();
+}
+
+async function applyPasswordChange(){
+  const mode = dlgPwdChange.dataset.mode;
+  const err = document.getElementById("pwdChangeError");
+  err.textContent = "";
+  const oldPwd = document.getElementById("pwdOld").value;
+  const newPwd = document.getElementById("pwdNew").value;
+  const newPwd2 = document.getElementById("pwdNew2").value;
+
+  const db = await openDB();
+
+  if(mode !== "setup"){
+    try {
+      const stored = await dbGet(db, KEY_ENC);
+      const k = await deriveKey(oldPwd, b64dec(stored.salt));
+      await decryptState(stored, k);
+    } catch(e){ err.textContent = "Mot de passe actuel incorrect"; return; }
+  }
+
+  if(mode === "disable"){
+    cryptoKey = null;
+    await dbPut(db, {key: KEY_PLAIN, data: state});
+    await dbDelete(db, KEY_ENC);
+    dlgPwdChange.close();
+    alert("Protection désactivée. Tes données sont désormais stockées en clair.");
+    return;
+  }
+
+  if(newPwd.length < 4){ err.textContent = "4 caractères minimum"; return; }
+  if(newPwd !== newPwd2){ err.textContent = "Les mots de passe ne correspondent pas"; return; }
+
+  const salt = crypto.getRandomValues(new Uint8Array(16));
+  const key = await deriveKey(newPwd, salt);
+  const enc = await encryptState(state, key);
+  await dbPut(db, {key: KEY_ENC, salt: b64enc(salt), ...enc});
+  await dbDelete(db, KEY_PLAIN);
+  cryptoKey = key;
+  dlgPwdChange.close();
+  alert(mode === "setup" ? "Protection activée." : "Mot de passe modifié.");
+}
+
+/* ---------- Bootstrap ---------- */
+(async function init(){
+  const loaded = await load();
+  if(loaded.encrypted){
+    showLockOverlay("unlock");
+    return;
+  }
+  state = loaded.data;
+  afterUnlock();
+})();
+</script>
+</body>
+</html>

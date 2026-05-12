@@ -216,6 +216,7 @@
       <input id="authPwd" type="password" placeholder="Mot de passe" autocomplete="current-password">
       <div class="auth-err" id="authErr"></div>
       <button class="auth-btn primary" id="authBtn">Se connecter</button>
+      <button class="auth-btn secondary" id="authForgot">Mot de passe oublié ?</button>
       <div class="auth-switch">Pas encore de compte ? <a id="authToggle">Créer un compte</a></div>
     </div>
   </div>
@@ -488,6 +489,20 @@ document.getElementById("authToggle").onclick = () => {
   document.querySelector(".auth-switch").firstChild.textContent = authIsRegister ? "Déjà un compte ? " : "Pas encore de compte ? ";
   document.getElementById("authErr").textContent = "";
 };
+document.getElementById("authForgot").onclick = async () => {
+  const email = document.getElementById("authEmail").value.trim();
+  const errEl = document.getElementById("authErr");
+  if (!email) { errEl.textContent = "Entre ton email d'abord"; return; }
+  try {
+    await auth.sendPasswordResetEmail(email);
+    errEl.style.color = "var(--pos)";
+    errEl.textContent = "Email de réinitialisation envoyé !";
+    setTimeout(() => { errEl.style.color = "var(--neg)"; errEl.textContent = ""; }, 4000);
+  } catch(e) {
+    errEl.textContent = e.code === "auth/user-not-found" ? "Email introuvable" : e.message;
+  }
+};
+
 document.getElementById("authBtn").onclick = async () => {
   const email = document.getElementById("authEmail").value.trim();
   const pwd = document.getElementById("authPwd").value;

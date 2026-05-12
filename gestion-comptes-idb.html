@@ -86,6 +86,7 @@
     <input id="authPwd" type="password" placeholder="Mot de passe" style="width:100%;padding:10px;border:1px solid #c7d2e0;border-radius:6px;font-size:14px;box-sizing:border-box;">
     <div id="authErr" style="color:#c0392b;font-size:12px;margin:8px 0;min-height:16px;"></div>
     <button id="authBtn" style="width:100%;padding:11px;font-size:14px;background:#1f3a5f;color:#fff;border:0;border-radius:6px;cursor:pointer;font-weight:600;">Se connecter</button>
+    <button id="authForgot" style="width:100%;padding:11px;font-size:13px;background:#fff;color:#1f3a5f;border:1px solid #c7d2e0;border-radius:6px;cursor:pointer;margin-top:8px;">Mot de passe oublié ?</button>
     <p style="text-align:center;font-size:13px;color:#6b7280;margin:14px 0 0;">Pas encore de compte ? <a id="authToggle" style="color:#1f3a5f;font-weight:600;cursor:pointer;">Créer un compte</a></p>
   </div>
 </div>
@@ -523,6 +524,20 @@ document.getElementById("authToggle").onclick = () => {
   document.getElementById("authBtn").textContent = authIsRegister ? "Créer le compte" : "Se connecter";
   document.getElementById("authErr").textContent = "";
 };
+document.getElementById("authForgot").onclick = async () => {
+  const email = document.getElementById("authEmail").value.trim();
+  const errEl = document.getElementById("authErr");
+  if (!email) { errEl.textContent = "Entre ton email d'abord"; return; }
+  try {
+    await auth.sendPasswordResetEmail(email);
+    errEl.style.color = "#138a36";
+    errEl.textContent = "Email de réinitialisation envoyé !";
+    setTimeout(() => { errEl.style.color = "#c0392b"; errEl.textContent = ""; }, 4000);
+  } catch(e) {
+    errEl.textContent = e.code === "auth/user-not-found" ? "Email introuvable" : e.message;
+  }
+};
+
 document.getElementById("authBtn").onclick = async () => {
   const email = document.getElementById("authEmail").value.trim();
   const pwd = document.getElementById("authPwd").value;

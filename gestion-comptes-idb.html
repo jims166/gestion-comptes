@@ -1077,18 +1077,30 @@ function validateUpcoming(id){
 
 let chartB, chartC;
 function drawCharts(ops, refMonth){
-  const ctxB = document.getElementById("chartBalance").getContext("2d");
   const labels = ops?ops.map(o=>o.date.split("-").reverse().slice(0,2).join("/")):[];
   const data = ops?ops.map(o=>o.running):[];
-  if(chartB) chartB.destroy();
-  chartB = new Chart(ctxB,{type:"line",data:{labels, datasets:[{label:"Solde", data, borderColor:"#1f3a5f", backgroundColor:"rgba(31,58,95,.1)", fill:true, tension:.2, pointRadius:2}]}, options:{plugins:{legend:{display:false}}, scales:{y:{ticks:{callback:v=>fmt(v)}}}}});
+  if(chartB){
+    chartB.data.labels = labels;
+    chartB.data.datasets[0].data = data;
+    chartB.update("none");
+  } else {
+    const ctxB = document.getElementById("chartBalance").getContext("2d");
+    chartB = new Chart(ctxB,{type:"line",data:{labels, datasets:[{label:"Solde", data, borderColor:"#1f3a5f", backgroundColor:"rgba(31,58,95,.1)", fill:true, tension:.2, pointRadius:2}]}, options:{plugins:{legend:{display:false}}, scales:{y:{ticks:{callback:v=>fmt(v)}}}}});
+  }
 
-  const ctxC = document.getElementById("chartCat").getContext("2d");
   const monthOps = (ops||[]).filter(o=>refMonth && o.date.startsWith(refMonth) && o.amount<0 && o.category);
   const totals = {};
   monthOps.forEach(o=>{ totals[o.category] = (totals[o.category]||0) + (-o.amount); });
-  if(chartC) chartC.destroy();
-  chartC = new Chart(ctxC,{type:"doughnut",data:{labels:Object.keys(totals),datasets:[{data:Object.values(totals), backgroundColor:["#1f3a5f","#2e86ab","#a23b72","#f18f01","#c73e1d","#3a7d44","#6b5ca5","#888"]}]}, options:{plugins:{legend:{position:"right",labels:{font:{size:11}}}}}});
+  const catLabels = Object.keys(totals);
+  const catData = Object.values(totals);
+  if(chartC){
+    chartC.data.labels = catLabels;
+    chartC.data.datasets[0].data = catData;
+    chartC.update("none");
+  } else {
+    const ctxC = document.getElementById("chartCat").getContext("2d");
+    chartC = new Chart(ctxC,{type:"doughnut",data:{labels:catLabels,datasets:[{data:catData, backgroundColor:["#1f3a5f","#2e86ab","#a23b72","#f18f01","#c73e1d","#3a7d44","#6b5ca5","#888"]}]}, options:{plugins:{legend:{position:"right",labels:{font:{size:11}}}}}});
+  }
 }
 
 function selectAcc(id){ currentAcc = id; render(); }

@@ -188,10 +188,37 @@
   .seg { display: flex; background: var(--bg-grouped); border-radius: 10px; padding: 2px; margin: 0 16px 12px; }
   .seg button { flex: 1; background: transparent; border: 0; padding: 10px 8px; font-size: 13px; color: var(--ink-2); border-radius: 8px; cursor: pointer; min-height: 36px; }
   .seg button.active { background: var(--bg-elev); color: var(--ink); box-shadow: 0 1px 3px rgba(0,0,0,0.08); font-weight: 600; }
+
+  /* Auth screen */
+  #authScreen { display:none; position:fixed; inset:0; background:#1f3a5f; z-index:100000; align-items:center; justify-content:center; }
+  #authScreen.show { display:flex; }
+  .auth-card { background:#fff; border-radius:14px; padding:28px 24px; width:340px; max-width:90vw; box-shadow:0 20px 60px rgba(0,0,0,0.3); }
+  .auth-card h2 { font-size:20px; margin:0 0 6px; color:#0f1115; }
+  .auth-card p { font-size:13px; color:#6b7280; margin:0 0 16px; }
+  .auth-card input { width:100%; padding:11px 12px; border:1px solid #c7d2e0; border-radius:8px; font-size:14px; margin-bottom:10px; box-sizing:border-box; }
+  .auth-card .auth-btn { width:100%; padding:12px; font-size:15px; font-weight:600; border:0; border-radius:8px; cursor:pointer; margin-top:4px; }
+  .auth-card .auth-btn.primary { background:#1f3a5f; color:#fff; }
+  .auth-card .auth-btn.secondary { background:#f1f3f6; color:#1f3a5f; margin-top:8px; }
+  .auth-card .auth-err { color:#c0392b; font-size:12px; min-height:16px; margin:-4px 0 8px; }
+  .auth-card .auth-switch { text-align:center; font-size:13px; color:#6b7280; margin-top:14px; }
+  .auth-card .auth-switch a { color:#1f3a5f; font-weight:600; cursor:pointer; }
 </style>
 </head>
 <body>
 <div id="app">
+
+  <!-- Auth screen -->
+  <div id="authScreen">
+    <div class="auth-card">
+      <h2 id="authTitle">🔐 Connexion</h2>
+      <p id="authSub">Connecte-toi pour accéder à tes comptes.</p>
+      <input id="authEmail" type="email" placeholder="Email" autocomplete="email">
+      <input id="authPwd" type="password" placeholder="Mot de passe" autocomplete="current-password">
+      <div class="auth-err" id="authErr"></div>
+      <button class="auth-btn primary" id="authBtn">Se connecter</button>
+      <div class="auth-switch">Pas encore de compte ? <a id="authToggle">Créer un compte</a></div>
+    </div>
+  </div>
 
   <!-- Lock overlay -->
   <div id="lock">
@@ -341,6 +368,7 @@
 
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
 <script>
 /* ==========================================================================
    GESTION COMPTES — MOBILE
@@ -374,7 +402,7 @@ let opsTab = "all";
 let opsFilters = { category: null, reconciled: null };
 let currentPage = "accounts";
 
-/* ---------- Firebase Sync ---------- */
+/* ---------- Firebase Auth + Sync ---------- */
 const firebaseConfig = {
   apiKey: "AIzaSyDRJQnrjL4TQV6MfS7j3ngWbVcfg8e3-lg",
   authDomain: "gestion-comptes-8ce65.firebaseapp.com",
@@ -385,9 +413,14 @@ const firebaseConfig = {
 };
 firebase.initializeApp(firebaseConfig);
 const fsdb = firebase.firestore();
-const DOC_REF = fsdb.collection("data").doc("main");
+const auth = firebase.auth();
 let lastSyncedAt = 0;
 let unsubSnapshot = null;
+
+function getDocRef() {
+  const user = auth.currentUser;
+  return user ? fsdb.collection("users").doc(user.uid).collection("data").doc("main") : null;
+}
 
 function setSyncStatus(s) {
   const el = document.getElementById("syncStatus");
@@ -398,7 +431,8 @@ function setSyncStatus(s) {
 }
 
 async function syncToFirestore() {
-  if (!state) return;
+  const docRef = getDocRef();
+  if (!state || !docRef) return;
   try {
     setSyncStatus("syncing");
     const payload = {
@@ -408,7 +442,7 @@ async function syncToFirestore() {
       reconciliations: state.reconciliations || [],
       lastModified: Date.now()
     };
-    await DOC_REF.set(payload);
+    await docRef.set(payload);
     lastSyncedAt = payload.lastModified;
     setSyncStatus("ok");
   } catch(e) {
@@ -418,9 +452,11 @@ async function syncToFirestore() {
 }
 
 function startRealtimeSync() {
+  const docRef = getDocRef();
+  if (!docRef) return;
   if (unsubSnapshot) unsubSnapshot();
   setSyncStatus("syncing");
-  unsubSnapshot = DOC_REF.onSnapshot(doc => {
+  unsubSnapshot = docRef.onSnapshot(doc => {
     if (!doc.exists) { setSyncStatus("ok"); return; }
     const remote = doc.data();
     if (!remote || !remote.lastModified) { setSyncStatus("ok"); return; }
@@ -440,6 +476,45 @@ function startRealtimeSync() {
     setSyncStatus("offline");
   });
 }
+
+/* ---------- Auth UI ---------- */
+let authIsRegister = false;
+document.getElementById("authToggle").onclick = () => {
+  authIsRegister = !authIsRegister;
+  document.getElementById("authTitle").textContent = authIsRegister ? "🔐 Créer un compte" : "🔐 Connexion";
+  document.getElementById("authSub").textContent = authIsRegister ? "Crée ton compte pour sécuriser tes données." : "Connecte-toi pour accéder à tes comptes.";
+  document.getElementById("authBtn").textContent = authIsRegister ? "Créer le compte" : "Se connecter";
+  document.getElementById("authToggle").textContent = authIsRegister ? "Se connecter" : "Créer un compte";
+  document.querySelector(".auth-switch").firstChild.textContent = authIsRegister ? "Déjà un compte ? " : "Pas encore de compte ? ";
+  document.getElementById("authErr").textContent = "";
+};
+document.getElementById("authBtn").onclick = async () => {
+  const email = document.getElementById("authEmail").value.trim();
+  const pwd = document.getElementById("authPwd").value;
+  const errEl = document.getElementById("authErr");
+  errEl.textContent = "";
+  if (!email || !pwd) { errEl.textContent = "Email et mot de passe requis"; return; }
+  try {
+    if (authIsRegister) {
+      if (pwd.length < 6) { errEl.textContent = "6 caractères minimum"; return; }
+      await auth.createUserWithEmailAndPassword(email, pwd);
+    } else {
+      await auth.signInWithEmailAndPassword(email, pwd);
+    }
+  } catch(e) {
+    const msgs = { "auth/wrong-password":"Mot de passe incorrect", "auth/user-not-found":"Email introuvable", "auth/email-already-in-use":"Email déjà utilisé, connecte-toi", "auth/invalid-email":"Email invalide" };
+    errEl.textContent = msgs[e.code] || e.message;
+  }
+};
+
+auth.onAuthStateChanged(async user => {
+  if (user) {
+    document.getElementById("authScreen").classList.remove("show");
+    await initApp();
+  } else {
+    document.getElementById("authScreen").classList.add("show");
+  }
+});
 
 /* ---------- IndexedDB ---------- */
 function openDB() {
@@ -1693,7 +1768,7 @@ if ("serviceWorker" in navigator) {
 }
 
 /* ---------- BOOTSTRAP ---------- */
-(async function init() {
+async function initApp() {
   try {
     const loaded = await load();
     if (loaded.encrypted) {
@@ -1705,7 +1780,7 @@ if ("serviceWorker" in navigator) {
   } catch (e) {
     appAlert("Erreur de démarrage", e.message || String(e));
   }
-})();
+}
 </script>
 </body>
 </html>

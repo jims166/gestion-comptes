@@ -6,6 +6,7 @@
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
 <style>
   * { box-sizing: border-box; }
   body { font-family: -apple-system, Segoe UI, Roboto, sans-serif; margin: 0; background: #f5f6f8; color: #222; }
@@ -75,6 +76,19 @@
     <input type="file" id="importCSVFile" accept=".csv,.txt" style="display:none" onchange="loadCSV(event)">
   </div>
 </header>
+
+<!-- Auth overlay -->
+<div id="authOverlay" style="display:none;position:fixed;inset:0;background:#1f3a5f;z-index:100000;align-items:center;justify-content:center;">
+  <div style="background:#fff;border-radius:14px;padding:28px 32px;width:380px;max-width:90vw;box-shadow:0 30px 80px rgba(0,0,0,.4);">
+    <h2 id="authTitle" style="margin:0 0 6px;font-size:20px;">🔐 Connexion</h2>
+    <p id="authSub" style="margin:0 0 16px;color:#6b7280;font-size:13px;">Connecte-toi pour accéder à tes comptes.</p>
+    <input id="authEmail" type="email" placeholder="Email" style="width:100%;padding:10px;border:1px solid #c7d2e0;border-radius:6px;font-size:14px;margin-bottom:8px;box-sizing:border-box;">
+    <input id="authPwd" type="password" placeholder="Mot de passe" style="width:100%;padding:10px;border:1px solid #c7d2e0;border-radius:6px;font-size:14px;box-sizing:border-box;">
+    <div id="authErr" style="color:#c0392b;font-size:12px;margin:8px 0;min-height:16px;"></div>
+    <button id="authBtn" style="width:100%;padding:11px;font-size:14px;background:#1f3a5f;color:#fff;border:0;border-radius:6px;cursor:pointer;font-weight:600;">Se connecter</button>
+    <p style="text-align:center;font-size:13px;color:#6b7280;margin:14px 0 0;">Pas encore de compte ? <a id="authToggle" style="color:#1f3a5f;font-weight:600;cursor:pointer;">Créer un compte</a></p>
+  </div>
+</div>
 
 <!-- Lock overlay (plein écran, bloque tant que non déverrouillé) -->
 <div id="lockOverlay" style="display:none;position:fixed;inset:0;background:#1f3a5f;color:#fff;z-index:99999;align-items:center;justify-content:center;">
@@ -425,7 +439,7 @@ let editingAcc = null, editingOp = null;
 let cryptoKey = null;
 let saveTimer = null;
 
-/* ---------- Firebase Sync ---------- */
+/* ---------- Firebase Auth + Sync ---------- */
 const firebaseConfig = {
   apiKey: "AIzaSyDRJQnrjL4TQV6MfS7j3ngWbVcfg8e3-lg",
   authDomain: "gestion-comptes-8ce65.firebaseapp.com",
@@ -436,9 +450,14 @@ const firebaseConfig = {
 };
 firebase.initializeApp(firebaseConfig);
 const fsdb = firebase.firestore();
-const DOC_REF = fsdb.collection("data").doc("main");
+const auth = firebase.auth();
 let lastSyncedAt = 0;
 let unsubSnapshot = null;
+
+function getDocRef() {
+  const user = auth.currentUser;
+  return user ? fsdb.collection("users").doc(user.uid).collection("data").doc("main") : null;
+}
 
 function setSyncStatus(s) {
   const el = document.getElementById("syncStatus");
@@ -449,7 +468,8 @@ function setSyncStatus(s) {
 }
 
 async function syncToFirestore() {
-  if (!state) return;
+  const docRef = getDocRef();
+  if (!state || !docRef) return;
   try {
     setSyncStatus("syncing");
     const payload = {
@@ -459,7 +479,7 @@ async function syncToFirestore() {
       reconciliations: state.reconciliations || [],
       lastModified: Date.now()
     };
-    await DOC_REF.set(payload);
+    await docRef.set(payload);
     lastSyncedAt = payload.lastModified;
     setSyncStatus("ok");
   } catch(e) {
@@ -469,9 +489,11 @@ async function syncToFirestore() {
 }
 
 function startRealtimeSync() {
+  const docRef = getDocRef();
+  if (!docRef) return;
   if (unsubSnapshot) unsubSnapshot();
   setSyncStatus("syncing");
-  unsubSnapshot = DOC_REF.onSnapshot(doc => {
+  unsubSnapshot = docRef.onSnapshot(doc => {
     if (!doc.exists) { setSyncStatus("ok"); return; }
     const remote = doc.data();
     if (!remote || !remote.lastModified) { setSyncStatus("ok"); return; }
@@ -491,6 +513,44 @@ function startRealtimeSync() {
     setSyncStatus("offline");
   });
 }
+
+/* ---------- Auth UI ---------- */
+let authIsRegister = false;
+document.getElementById("authToggle").onclick = () => {
+  authIsRegister = !authIsRegister;
+  document.getElementById("authTitle").textContent = authIsRegister ? "🔐 Créer un compte" : "🔐 Connexion";
+  document.getElementById("authSub").textContent = authIsRegister ? "Crée ton compte pour sécuriser tes données." : "Connecte-toi pour accéder à tes comptes.";
+  document.getElementById("authBtn").textContent = authIsRegister ? "Créer le compte" : "Se connecter";
+  document.getElementById("authErr").textContent = "";
+};
+document.getElementById("authBtn").onclick = async () => {
+  const email = document.getElementById("authEmail").value.trim();
+  const pwd = document.getElementById("authPwd").value;
+  const errEl = document.getElementById("authErr");
+  errEl.textContent = "";
+  if (!email || !pwd) { errEl.textContent = "Email et mot de passe requis"; return; }
+  try {
+    if (authIsRegister) {
+      if (pwd.length < 6) { errEl.textContent = "6 caractères minimum"; return; }
+      await auth.createUserWithEmailAndPassword(email, pwd);
+    } else {
+      await auth.signInWithEmailAndPassword(email, pwd);
+    }
+  } catch(e) {
+    const msgs = { "auth/wrong-password":"Mot de passe incorrect", "auth/user-not-found":"Email introuvable", "auth/email-already-in-use":"Email déjà utilisé", "auth/invalid-email":"Email invalide" };
+    errEl.textContent = msgs[e.code] || e.message;
+  }
+};
+
+auth.onAuthStateChanged(async user => {
+  const ov = document.getElementById("authOverlay");
+  if (user) {
+    ov.style.display = "none";
+    await initApp();
+  } else {
+    ov.style.display = "flex";
+  }
+});
 
 /* ---------- IndexedDB helpers ---------- */
 function openDB(){
@@ -1452,7 +1512,7 @@ async function applyPasswordChange(){
 }
 
 /* ---------- Bootstrap ---------- */
-(async function init(){
+async function initApp(){
   const loaded = await load();
   if(loaded.encrypted){
     showLockOverlay("unlock");
@@ -1460,7 +1520,7 @@ async function applyPasswordChange(){
   }
   state = loaded.data;
   afterUnlock();
-})();
+}
 </script>
 </body>
 </html>

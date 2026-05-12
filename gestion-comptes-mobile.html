@@ -6,6 +6,10 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="theme-color" content="#1f3a5f">
+<meta name="apple-mobile-web-app-title" content="Comptes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon-192.png">
 <title>Gestion comptes — mobile</title>
 <style>
   :root {
@@ -1681,6 +1685,11 @@ function afterUnlock() {
   currentAcc = state.accounts[0]?.id || null;
   startRealtimeSync();
   navigate("accounts");
+}
+
+/* ---------- SERVICE WORKER ---------- */
+if ("serviceWorker" in navigator) {
+  navigator.serviceWorker.register("sw.js").catch(e => console.warn("SW:", e));
 }
 
 /* ---------- BOOTSTRAP ---------- */

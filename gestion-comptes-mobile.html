@@ -407,7 +407,14 @@ function dbDelete(db, key) {
 }
 
 /* ---------- Crypto ---------- */
-const b64enc = b => btoa(String.fromCharCode(...new Uint8Array(b)));
+const b64enc = bytes => {
+  const arr = new Uint8Array(bytes);
+  let bin = '';
+  const chunk = 8192;
+  for (let i = 0; i < arr.length; i += chunk)
+    bin += String.fromCharCode(...arr.subarray(i, i + chunk));
+  return btoa(bin);
+};
 const b64dec = s => Uint8Array.from(atob(s), c => c.charCodeAt(0));
 
 async function deriveKey(password, salt) {

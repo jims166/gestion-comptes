@@ -1,4 +1,4 @@
-const CACHE = "comptes-v1";
+const CACHE = "comptes-v2";
 const ASSETS = [
   "/gestion-comptes/gestion-comptes-mobile.html",
   "/gestion-comptes/manifest.json"

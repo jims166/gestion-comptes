@@ -506,13 +506,25 @@ function startRealtimeSync() {
       reconciliations: remote.reconciliations || []
     };
     lastSyncedAt = remote.lastModified;
-    save();
+    saveLocalOnly();
     render();
     setSyncStatus("ok");
   }, err => {
     console.warn("Firestore listener error", err);
     setSyncStatus("offline");
   });
+}
+
+async function saveLocalOnly(){
+  const db = await openDB();
+  if(cryptoKey){
+    const stored = await dbGet(db, KEY_ENC);
+    const salt = stored ? stored.salt : b64enc(crypto.getRandomValues(new Uint8Array(16)));
+    const enc = await encryptState(state, cryptoKey);
+    await dbPut(db, {key: KEY_ENC, salt, ...enc});
+  } else {
+    await dbPut(db, {key: KEY_PLAIN, data: state});
+  }
 }
 
 /* ---------- Auth UI ---------- */

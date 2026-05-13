@@ -452,7 +452,7 @@ const firebaseConfig = {
 firebase.initializeApp(firebaseConfig);
 const fsdb = firebase.firestore();
 const auth = firebase.auth();
-let lastSyncedAt = 0;
+let lastSyncedAt = parseInt(localStorage.getItem("lastSyncedAt") || "0", 10);
 let unsubSnapshot = null;
 
 function getDocRef() {
@@ -475,6 +475,7 @@ async function syncToFirestore() {
     setSyncStatus("syncing");
     const modifiedAt = Date.now();
     lastSyncedAt = modifiedAt; // bloque onSnapshot AVANT l'upload
+    localStorage.setItem("lastSyncedAt", modifiedAt);
     const payload = {
       accounts: state.accounts || [],
       operations: state.operations || [],
@@ -507,6 +508,7 @@ function startRealtimeSync() {
       reconciliations: remote.reconciliations || []
     };
     lastSyncedAt = remote.lastModified;
+    localStorage.setItem("lastSyncedAt", remote.lastModified);
     if (!currentAcc && state.accounts.length > 0) {
       currentAcc = state.accounts[0].id;
     }

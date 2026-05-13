@@ -1564,6 +1564,11 @@ async function initApp(){
     return;
   }
   state = loaded.data;
+  // Si IndexedDB est vide, forcer lastSyncedAt à 0 pour que Firestore ait la priorité
+  if (!state.accounts.length && !state.operations.length) {
+    lastSyncedAt = 0;
+    localStorage.removeItem("lastSyncedAt");
+  }
   afterUnlock();
 }
 </script>

@@ -1829,6 +1829,12 @@ async function initApp() {
       return;
     }
     state = loaded.data;
+    // Si IndexedDB est vide (données effacées ou premier démarrage),
+    // on force lastSyncedAt à 0 pour que Firestore ait toujours la priorité
+    if (!state.accounts.length && !state.operations.length) {
+      lastSyncedAt = 0;
+      localStorage.removeItem("lastSyncedAt");
+    }
     afterUnlock();
   } catch (e) {
     appAlert("Erreur de démarrage", e.message || String(e));

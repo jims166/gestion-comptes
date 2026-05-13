@@ -298,6 +298,9 @@
               <div class="row-sub">Email Firebase connecté</div>
             </div>
           </div>
+          <div class="row" onclick="forceSyncFromCloud()">
+            <div class="row-main"><div class="row-title" style="color:#2980b9;">🔄 Forcer la synchronisation</div><div class="row-sub">Recharge toutes les données depuis le cloud</div></div>
+          </div>
           <div class="row" onclick="auth.signOut()">
             <div class="row-main"><div class="row-title" style="color:#e74c3c;">Se déconnecter</div></div>
           </div>
@@ -484,16 +487,37 @@ async function saveLocalOnly() {
   }
 }
 
+function forceSyncFromCloud() {
+  lastSyncedAt = -1;
+  localStorage.removeItem("lastSyncedAt");
+  if (unsubSnapshot) { unsubSnapshot(); unsubSnapshot = null; }
+  startRealtimeSync();
+  toast("Synchronisation forcée depuis le cloud…", "info");
+}
+
 function startRealtimeSync() {
   const docRef = getDocRef();
   if (!docRef) return;
   if (unsubSnapshot) unsubSnapshot();
   setSyncStatus("syncing");
   unsubSnapshot = docRef.onSnapshot(doc => {
-    if (!doc.exists) { setSyncStatus("empty"); return; }
+    if (!doc.exists) {
+      setSyncStatus("empty");
+      toast("⚠️ Aucune donnée dans le cloud (doc introuvable)", "error");
+      return;
+    }
     const remote = doc.data();
-    if (!remote || !remote.lastModified) { setSyncStatus("empty"); return; }
-    if (remote.lastModified <= lastSyncedAt) { setSyncStatus("ok"); return; }
+    if (!remote || !remote.lastModified) {
+      setSyncStatus("empty");
+      toast("⚠️ Document cloud sans timestamp", "error");
+      return;
+    }
+    if (remote.lastModified <= lastSyncedAt) {
+      setSyncStatus("ok");
+      toast("✅ Déjà à jour (lastSyncedAt=" + lastSyncedAt + ", remote=" + remote.lastModified + ")", "info");
+      return;
+    }
+    toast("📥 " + (remote.accounts||[]).length + " compte(s) reçu(s) du cloud", "success");
     state = {
       accounts: remote.accounts || [],
       operations: remote.operations || [],

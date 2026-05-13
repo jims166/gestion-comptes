@@ -189,37 +189,10 @@
   .seg button { flex: 1; background: transparent; border: 0; padding: 10px 8px; font-size: 13px; color: var(--ink-2); border-radius: 8px; cursor: pointer; min-height: 36px; }
   .seg button.active { background: var(--bg-elev); color: var(--ink); box-shadow: 0 1px 3px rgba(0,0,0,0.08); font-weight: 600; }
 
-  /* Auth screen */
-  #authScreen { display:none; position:fixed; inset:0; background:#1f3a5f; z-index:100000; align-items:center; justify-content:center; }
-  #authScreen.show { display:flex; }
-  .auth-card { background:#fff; border-radius:14px; padding:28px 24px; width:340px; max-width:90vw; box-shadow:0 20px 60px rgba(0,0,0,0.3); }
-  .auth-card h2 { font-size:20px; margin:0 0 6px; color:#0f1115; }
-  .auth-card p { font-size:13px; color:#6b7280; margin:0 0 16px; }
-  .auth-card input { width:100%; padding:11px 12px; border:1px solid #c7d2e0; border-radius:8px; font-size:14px; margin-bottom:10px; box-sizing:border-box; }
-  .auth-card .auth-btn { width:100%; padding:12px; font-size:15px; font-weight:600; border:0; border-radius:8px; cursor:pointer; margin-top:4px; }
-  .auth-card .auth-btn.primary { background:#1f3a5f; color:#fff; }
-  .auth-card .auth-btn.secondary { background:#f1f3f6; color:#1f3a5f; margin-top:8px; }
-  .auth-card .auth-err { color:#c0392b; font-size:12px; min-height:16px; margin:-4px 0 8px; }
-  .auth-card .auth-switch { text-align:center; font-size:13px; color:#6b7280; margin-top:14px; }
-  .auth-card .auth-switch a { color:#1f3a5f; font-weight:600; cursor:pointer; }
 </style>
 </head>
 <body>
 <div id="app">
-
-  <!-- Auth screen -->
-  <div id="authScreen">
-    <div class="auth-card">
-      <h2 id="authTitle">🔐 Connexion</h2>
-      <p id="authSub">Connecte-toi pour accéder à tes comptes.</p>
-      <input id="authEmail" type="email" placeholder="Email" autocomplete="email">
-      <input id="authPwd" type="password" placeholder="Mot de passe" autocomplete="current-password">
-      <div class="auth-err" id="authErr"></div>
-      <button class="auth-btn primary" id="authBtn">Se connecter</button>
-      <button class="auth-btn secondary" id="authForgot">Mot de passe oublié ?</button>
-      <div class="auth-switch">Pas encore de compte ? <a id="authToggle">Créer un compte</a></div>
-    </div>
-  </div>
 
   <!-- Lock overlay -->
   <div id="lock">
@@ -239,7 +212,6 @@
   <header class="navbar" id="navbar">
     <button class="nav-back" id="navBack" style="display:none;">‹ Retour</button>
     <h1 id="navTitle">Comptes</h1>
-    <span id="syncStatus" style="font-size:18px;cursor:default;padding:6px;" title="En attente">⏳</span>
     <button class="nav-action" id="navRight" style="visibility:hidden;"></button>
   </header>
 
@@ -289,23 +261,6 @@
 
     <!-- Page: Data (import/export) -->
     <section class="page" id="page-data">
-      <div class="section">
-        <div class="section-head">Compte connecté</div>
-        <div class="card">
-          <div class="row">
-            <div class="row-main">
-              <div class="row-title" id="connectedEmail" style="font-size:13px;word-break:break-all;">—</div>
-              <div class="row-sub">Email Firebase connecté</div>
-            </div>
-          </div>
-          <div class="row" onclick="forceSyncFromCloud()">
-            <div class="row-main"><div class="row-title" style="color:#2980b9;">🔄 Forcer la synchronisation</div><div class="row-sub">Recharge toutes les données depuis le cloud</div></div>
-          </div>
-          <div class="row" onclick="auth.signOut()">
-            <div class="row-main"><div class="row-title" style="color:#e74c3c;">Se déconnecter</div></div>
-          </div>
-        </div>
-      </div>
       <div class="section">
         <div class="section-head">Sauvegarde</div>
         <div class="card">
@@ -384,9 +339,6 @@
 <!-- Toast -->
 <div id="toast" style="display:none;"></div>
 
-<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
 <script>
 /* ==========================================================================
    GESTION COMPTES — MOBILE
@@ -419,179 +371,6 @@ let currentAcc = null;
 let opsTab = "all";
 let opsFilters = { category: null, reconciled: null };
 let currentPage = "accounts";
-
-/* ---------- Firebase Auth + Sync ---------- */
-const firebaseConfig = {
-  apiKey: "AIzaSyDRJQnrjL4TQV6MfS7j3ngWbVcfg8e3-lg",
-  authDomain: "gestion-comptes-8ce65.firebaseapp.com",
-  projectId: "gestion-comptes-8ce65",
-  storageBucket: "gestion-comptes-8ce65.firebasestorage.app",
-  messagingSenderId: "401346388473",
-  appId: "1:401346388473:web:02e50bad91ae3f8f799d28"
-};
-firebase.initializeApp(firebaseConfig);
-const fsdb = firebase.firestore();
-const auth = firebase.auth();
-let lastSyncedAt = parseInt(localStorage.getItem("lastSyncedAt") || "0", 10);
-let unsubSnapshot = null;
-
-function getDocRef() {
-  const user = auth.currentUser;
-  return user ? fsdb.collection("users").doc(user.uid).collection("data").doc("main") : null;
-}
-
-function setSyncStatus(s) {
-  const el = document.getElementById("syncStatus");
-  if (!el) return;
-  const map = { syncing:["🔄","Synchronisation..."], ok:["☁️","Synchronisé"], empty:["🫙","Aucune donnée dans le cloud — vérifiez le compte connecté"], offline:["📴","Hors ligne"], error:["⚠️","Erreur de sync"] };
-  const [icon, title] = map[s] || ["☁️",""];
-  el.textContent = icon; el.title = title;
-}
-
-async function syncToFirestore() {
-  const docRef = getDocRef();
-  if (!state || !docRef) return;
-  try {
-    setSyncStatus("syncing");
-    const modifiedAt = Date.now();
-    lastSyncedAt = modifiedAt; // bloque onSnapshot AVANT l'upload
-    localStorage.setItem("lastSyncedAt", modifiedAt);
-    const payload = {
-      accounts: state.accounts || [],
-      operations: state.operations || [],
-      categories: state.categories || [],
-      reconciliations: state.reconciliations || [],
-      lastModified: modifiedAt
-    };
-    await docRef.set(payload);
-    setSyncStatus("ok");
-  } catch(e) {
-    console.warn("Firestore sync error", e);
-    setSyncStatus("error");
-  }
-}
-
-async function saveLocalOnly() {
-  try {
-    const db = await openDB();
-    if (cryptoKey) {
-      const stored = await dbGet(db, KEY_ENC);
-      const salt = stored ? stored.salt : b64enc(crypto.getRandomValues(new Uint8Array(16)));
-      const enc = await encryptState(state, cryptoKey);
-      await dbPut(db, { key: KEY_ENC, salt, ...enc });
-    } else {
-      await dbPut(db, { key: KEY_PLAIN, data: state });
-    }
-  } catch(e) {
-    console.warn("saveLocalOnly failed", e);
-  }
-}
-
-function forceSyncFromCloud() {
-  lastSyncedAt = -1;
-  localStorage.removeItem("lastSyncedAt");
-  if (unsubSnapshot) { unsubSnapshot(); unsubSnapshot = null; }
-  startRealtimeSync();
-  toast("Synchronisation forcée depuis le cloud…", "info");
-}
-
-function startRealtimeSync() {
-  const docRef = getDocRef();
-  if (!docRef) return;
-  if (unsubSnapshot) unsubSnapshot();
-  setSyncStatus("syncing");
-  unsubSnapshot = docRef.onSnapshot(doc => {
-    if (!doc.exists) {
-      setSyncStatus("empty");
-      toast("⚠️ Aucune donnée dans le cloud (doc introuvable)", "error");
-      return;
-    }
-    const remote = doc.data();
-    if (!remote || !remote.lastModified) {
-      setSyncStatus("empty");
-      toast("⚠️ Document cloud sans timestamp", "error");
-      return;
-    }
-    if (remote.lastModified <= lastSyncedAt) {
-      setSyncStatus("ok");
-      toast("✅ Déjà à jour (lastSyncedAt=" + lastSyncedAt + ", remote=" + remote.lastModified + ")", "info");
-      return;
-    }
-    toast("📥 " + (remote.accounts||[]).length + " compte(s) reçu(s) du cloud", "success");
-    state = {
-      accounts: remote.accounts || [],
-      operations: remote.operations || [],
-      categories: remote.categories || [],
-      reconciliations: remote.reconciliations || []
-    };
-    lastSyncedAt = remote.lastModified;
-    localStorage.setItem("lastSyncedAt", remote.lastModified);
-    if (!currentAcc && state.accounts.length > 0) {
-      currentAcc = state.accounts[0].id;
-    }
-    saveLocalOnly();
-    render();
-    setSyncStatus("ok");
-  }, err => {
-    console.warn("Firestore listener error", err);
-    setSyncStatus("offline");
-  });
-}
-
-/* ---------- Auth UI ---------- */
-let authIsRegister = false;
-document.getElementById("authToggle").onclick = () => {
-  authIsRegister = !authIsRegister;
-  document.getElementById("authTitle").textContent = authIsRegister ? "🔐 Créer un compte" : "🔐 Connexion";
-  document.getElementById("authSub").textContent = authIsRegister ? "Crée ton compte pour sécuriser tes données." : "Connecte-toi pour accéder à tes comptes.";
-  document.getElementById("authBtn").textContent = authIsRegister ? "Créer le compte" : "Se connecter";
-  document.getElementById("authToggle").textContent = authIsRegister ? "Se connecter" : "Créer un compte";
-  document.querySelector(".auth-switch").firstChild.textContent = authIsRegister ? "Déjà un compte ? " : "Pas encore de compte ? ";
-  document.getElementById("authErr").textContent = "";
-};
-document.getElementById("authForgot").onclick = async () => {
-  const email = document.getElementById("authEmail").value.trim();
-  const errEl = document.getElementById("authErr");
-  if (!email) { errEl.textContent = "Entre ton email d'abord"; return; }
-  try {
-    await auth.sendPasswordResetEmail(email);
-    errEl.style.color = "var(--pos)";
-    errEl.textContent = "Email de réinitialisation envoyé !";
-    setTimeout(() => { errEl.style.color = "var(--neg)"; errEl.textContent = ""; }, 4000);
-  } catch(e) {
-    errEl.textContent = e.code === "auth/user-not-found" ? "Email introuvable" : e.message;
-  }
-};
-
-document.getElementById("authBtn").onclick = async () => {
-  const email = document.getElementById("authEmail").value.trim();
-  const pwd = document.getElementById("authPwd").value;
-  const errEl = document.getElementById("authErr");
-  errEl.textContent = "";
-  if (!email || !pwd) { errEl.textContent = "Email et mot de passe requis"; return; }
-  try {
-    if (authIsRegister) {
-      if (pwd.length < 6) { errEl.textContent = "6 caractères minimum"; return; }
-      await auth.createUserWithEmailAndPassword(email, pwd);
-    } else {
-      await auth.signInWithEmailAndPassword(email, pwd);
-    }
-  } catch(e) {
-    const msgs = { "auth/wrong-password":"Mot de passe incorrect", "auth/user-not-found":"Email introuvable", "auth/email-already-in-use":"Email déjà utilisé, connecte-toi", "auth/invalid-email":"Email invalide" };
-    errEl.textContent = msgs[e.code] || e.message;
-  }
-};
-
-auth.onAuthStateChanged(async user => {
-  if (user) {
-    document.getElementById("authScreen").classList.remove("show");
-    const emailEl = document.getElementById("connectedEmail");
-    if (emailEl) emailEl.textContent = user.email || user.uid;
-    await initApp();
-  } else {
-    document.getElementById("authScreen").classList.add("show");
-  }
-});
 
 /* ---------- IndexedDB ---------- */
 function openDB() {
@@ -681,7 +460,6 @@ function save() {
       } else {
         await dbPut(db, { key: KEY_PLAIN, data: state });
       }
-      syncToFirestore();
     } catch (e) {
       console.warn("save failed", e);
       toast("Erreur de sauvegarde : " + (e.message || e), "error");
@@ -1835,7 +1613,6 @@ async function handleLockSubmit() {
 
 function afterUnlock() {
   currentAcc = state.accounts[0]?.id || null;
-  startRealtimeSync();
   navigate("accounts");
 }
 
@@ -1853,17 +1630,13 @@ async function initApp() {
       return;
     }
     state = loaded.data;
-    // Si IndexedDB est vide (données effacées ou premier démarrage),
-    // on force lastSyncedAt à 0 pour que Firestore ait toujours la priorité
-    if (!state.accounts.length && !state.operations.length) {
-      lastSyncedAt = 0;
-      localStorage.removeItem("lastSyncedAt");
-    }
     afterUnlock();
   } catch (e) {
     appAlert("Erreur de démarrage", e.message || String(e));
   }
 }
+
+initApp();
 </script>
 </body>
 </html>

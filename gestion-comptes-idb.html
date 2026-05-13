@@ -473,15 +473,16 @@ async function syncToFirestore() {
   if (!state || !docRef) return;
   try {
     setSyncStatus("syncing");
+    const modifiedAt = Date.now();
+    lastSyncedAt = modifiedAt; // bloque onSnapshot AVANT l'upload
     const payload = {
       accounts: state.accounts || [],
       operations: state.operations || [],
       categories: state.categories || [],
       reconciliations: state.reconciliations || [],
-      lastModified: Date.now()
+      lastModified: modifiedAt
     };
     await docRef.set(payload);
-    lastSyncedAt = payload.lastModified;
     setSyncStatus("ok");
   } catch(e) {
     console.warn("Firestore sync error", e);

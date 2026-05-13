@@ -506,6 +506,9 @@ function startRealtimeSync() {
       reconciliations: remote.reconciliations || []
     };
     lastSyncedAt = remote.lastModified;
+    if (!currentAcc && state.accounts.length > 0) {
+      currentAcc = state.accounts[0].id;
+    }
     saveLocalOnly();
     render();
     setSyncStatus("ok");

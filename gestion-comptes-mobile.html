@@ -290,6 +290,20 @@
     <!-- Page: Data (import/export) -->
     <section class="page" id="page-data">
       <div class="section">
+        <div class="section-head">Compte connecté</div>
+        <div class="card">
+          <div class="row">
+            <div class="row-main">
+              <div class="row-title" id="connectedEmail" style="font-size:13px;word-break:break-all;">—</div>
+              <div class="row-sub">Email Firebase connecté</div>
+            </div>
+          </div>
+          <div class="row" onclick="auth.signOut()">
+            <div class="row-main"><div class="row-title" style="color:#e74c3c;">Se déconnecter</div></div>
+          </div>
+        </div>
+      </div>
+      <div class="section">
         <div class="section-head">Sauvegarde</div>
         <div class="card">
           <div class="row" onclick="exportJSON()">
@@ -426,7 +440,7 @@ function getDocRef() {
 function setSyncStatus(s) {
   const el = document.getElementById("syncStatus");
   if (!el) return;
-  const map = { syncing:["🔄","Synchronisation..."], ok:["☁️","Synchronisé"], offline:["📴","Hors ligne"], error:["⚠️","Erreur de sync"] };
+  const map = { syncing:["🔄","Synchronisation..."], ok:["☁️","Synchronisé"], empty:["🫙","Aucune donnée dans le cloud — vérifiez le compte connecté"], offline:["📴","Hors ligne"], error:["⚠️","Erreur de sync"] };
   const [icon, title] = map[s] || ["☁️",""];
   el.textContent = icon; el.title = title;
 }
@@ -476,9 +490,9 @@ function startRealtimeSync() {
   if (unsubSnapshot) unsubSnapshot();
   setSyncStatus("syncing");
   unsubSnapshot = docRef.onSnapshot(doc => {
-    if (!doc.exists) { setSyncStatus("ok"); return; }
+    if (!doc.exists) { setSyncStatus("empty"); return; }
     const remote = doc.data();
-    if (!remote || !remote.lastModified) { setSyncStatus("ok"); return; }
+    if (!remote || !remote.lastModified) { setSyncStatus("empty"); return; }
     if (remote.lastModified <= lastSyncedAt) { setSyncStatus("ok"); return; }
     state = {
       accounts: remote.accounts || [],
@@ -547,6 +561,8 @@ document.getElementById("authBtn").onclick = async () => {
 auth.onAuthStateChanged(async user => {
   if (user) {
     document.getElementById("authScreen").classList.remove("show");
+    const emailEl = document.getElementById("connectedEmail");
+    if (emailEl) emailEl.textContent = user.email || user.uid;
     await initApp();
   } else {
     document.getElementById("authScreen").classList.add("show");

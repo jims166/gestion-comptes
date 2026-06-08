@@ -271,6 +271,13 @@
             </div>
             <div class="row-chev"></div>
           </div>
+          <div class="row" onclick="openEncExportSheet()">
+            <div class="row-main">
+              <div class="row-title">Exporter JSON chiffré 🔐</div>
+              <div class="row-sub">Backup protégé par mot de passe</div>
+            </div>
+            <div class="row-chev"></div>
+          </div>
           <div class="row" onclick="exportCSV()">
             <div class="row-main">
               <div class="row-title">Exporter CSV (compte courant)</div>
@@ -1221,6 +1228,81 @@ function deleteCategory(c) {
   render();
 }
 
+/* ---------- EXPORT / IMPORT JSON CHIFFRÉ ---------- */
+function openEncExportSheet(){
+  const html = `
+    <div class="field"><label>Mot de passe</label><input id="encExpPwd" type="password" placeholder="Minimum 4 caractères"></div>
+    <div class="field"><label>Confirmation</label><input id="encExpPwd2" type="password" placeholder="Même mot de passe"></div>
+    <div style="font-size:12px;color:var(--ink-3);margin-top:4px;">Le fichier sera illisible sans ce mot de passe.</div>
+  `;
+  showSheet({
+    title: "Exporter JSON chiffré 🔐",
+    rightLabel: "Exporter",
+    content: html,
+    onRight: async body => {
+      const pwd = body.querySelector("#encExpPwd").value;
+      const pwd2 = body.querySelector("#encExpPwd2").value;
+      if(pwd.length < 4){ toast("4 caractères minimum", "error"); return false; }
+      if(pwd !== pwd2){ toast("Les mots de passe ne correspondent pas", "error"); return false; }
+      try {
+        const salt = crypto.getRandomValues(new Uint8Array(16));
+        const key = await deriveKey(pwd, salt);
+        const enc = await encryptState(state, key);
+        const payload = { __encryptedBackup: true, salt: b64enc(salt), ...enc };
+        const blob = new Blob([JSON.stringify(payload)], { type: "application/json" });
+        const a = document.createElement("a");
+        a.href = URL.createObjectURL(blob);
+        a.download = `comptes-chiffre-${today()}.json`;
+        document.body.appendChild(a); a.click(); document.body.removeChild(a);
+        setTimeout(()=> URL.revokeObjectURL(a.href), 1000);
+        toast("Export chiffré prêt ✓", "success");
+      } catch(e){
+        toast("Erreur : " + (e.message || e), "error"); return false;
+      }
+    }
+  });
+}
+
+async function handleEncryptedImport(d){
+  showSheet({
+    title: "Importer JSON chiffré 🔐",
+    rightLabel: "Déchiffrer",
+    content: `
+      <div class="field"><label>Mot de passe du backup</label><input id="encImpPwd" type="password" placeholder="Mot de passe"></div>
+      <div style="font-size:12px;color:var(--ink-3);margin-top:4px;">Saisis le mot de passe utilisé lors de l'export.</div>
+    `,
+    onRight: async body => {
+      const pwd = body.querySelector("#encImpPwd").value;
+      if(!pwd){ toast("Mot de passe requis", "error"); return false; }
+      try {
+        const salt = b64dec(d.salt);
+        const key = await deriveKey(pwd, salt);
+        const decrypted = await decryptState(d, key);
+        if(!decrypted || !Array.isArray(decrypted.accounts) || !Array.isArray(decrypted.operations)){
+          toast("Structure invalide après déchiffrement", "error"); return false;
+        }
+        appConfirm(
+          "Importer ces données ?",
+          `${decrypted.accounts.length} compte(s), ${decrypted.operations.length} opération(s). Les données actuelles seront remplacées.`,
+          async () => {
+            try {
+              state = decrypted;
+              if(!Array.isArray(state.categories)) state.categories = [];
+              currentAcc = state.accounts[0]?.id || null;
+              await saveSync();
+              render();
+              toast("Import chiffré réussi ✓", "success");
+            } catch(err){ appAlert("Erreur import", err.message || String(err)); }
+          },
+          { yesLabel: "Importer" }
+        );
+      } catch(e){
+        toast("Mot de passe incorrect ou fichier corrompu", "error"); return false;
+      }
+    }
+  });
+}
+
 /* ---------- IMPORT / EXPORT JSON ---------- */
 function exportJSON() {
   try {
@@ -1251,6 +1333,11 @@ function handleJSONFile(ev) {
     try { d = JSON.parse(txt); }
     catch (err) {
       appAlert("JSON invalide", err.message || String(err));
+      return;
+    }
+    // Fichier chiffré ?
+    if (d && d.__encryptedBackup) {
+      handleEncryptedImport(d);
       return;
     }
     if (!d || !Array.isArray(d.accounts) || !Array.isArray(d.operations)) {

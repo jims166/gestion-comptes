@@ -1,0 +1,25 @@
+{
+  "name": "Gestion des comptes — Nuit",
+  "short_name": "Comptes",
+  "description": "Gestion de comptes bancaires avec sync temps réel",
+  "start_url": "/gestion-comptes/gestion-comptes-mobile-nuit.html",
+  "scope": "/gestion-comptes/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#070c1e",
+  "theme_color": "#070c1e",
+  "icons": [
+    {
+      "src": "icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
